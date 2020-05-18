@@ -1,0 +1,107 @@
+@charset "utf-8";
+/* Time-stamp: <2020-05-18T01:39:08Z> */
+
+/*
+   Author:
+
+     JRF ( http://jrf.cocolog-nifty.com/statuses/ )
+
+   Repository:
+
+     https://github.com/JRF-2018/shared_memo
+
+   License:
+
+     The author is a Japanese.
+
+     I intended this program to be public-domain, but you can treat
+     this program under the (new) BSD-License or under the Artistic
+     License, if it is convenient for you.
+
+     Within three months after the release of this program, I
+     especially admit responsibility of efforts for rational requests
+     of correction to this program.
+
+     I often have bouts of schizophrenia, but I believe that my
+     intention is legitimately fulfilled.
+*/
+
+pre {
+   border: solid 1px gray;
+   width: 95%;
+   padding: 2px;
+   margin-top: 0.1em;
+}
+
+h1 {
+   padding-top: 10px;
+}
+
+#qr {
+   float: left;
+}
+
+.memo {
+   clear: both;
+}
+
+.nolog {
+   clear: both;
+}
+
+.deleted {
+   color: gray;
+}
+
+textarea {
+   width: 95%;
+   margin: 0;
+}
+
+button {
+   font-size: smaller;
+}
+
+.info {
+   font-size: small;
+}
+
+/* フォント設定は↓を参考にしました。
+
+《2chのAAをOSに依存せず綺麗に表示するCSSの設定方法 (簡潔版) | marmooo's blog》  
+https://marmooo.blogspot.com/2019/01/2chaaoscss.html
+
+*/
+
+@font-face {
+  font-family: 'Textar';
+  font-style: normal;
+  font-weight: normal;
+  src: local('Textar'),
+  url('/fonts/textar-min.ttf') format('truetype');
+}
+
+textarea, pre {
+  font-size: 1em;
+  line-height: 1.1;
+  font-family: '梅Pゴシック',Textar,'ＭＳ Ｐゴシック','MS PGothic',sans-serif;
+  white-space: pre-wrap;
+  word-wrap: normal;
+}
+/* https://www.ryadel.com/en/css3-media-query-target-only-ie-ie6-ie11-firefox-chrome-safari-edge/
+   https://jeffclayton.wordpress.com/2015/02/01/css-os-platform-specific-hacks/
+   https://stackoverflow.com/questions/15190340/css-platform-specific-hacks
+   http://browserhacks.com/
+*/
+/* IE8 */
+@media \0screen {
+  textarea, pre { font-family: 'ＭＳ Ｐゴシック','MS PGothic','梅Pゴシック',Textar,sans-serif; }
+}
+/* IE9+ */
+@media screen and (min-width:0\0) and (min-resolution: +72dpi) {
+  textarea, pre { font-family: 'ＭＳ Ｐゴシック','MS PGothic','梅Pゴシック',Textar,sans-serif; }
+}
+/* Edge */
+@supports (-ms-ime-align:auto) {
+  textarea, pre { font-family: 'ＭＳ Ｐゴシック','MS PGothic','梅Pゴシック',Textar,sans-serif; }
+}
