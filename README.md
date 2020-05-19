@@ -1,6 +1,6 @@
 # グローバル共有メモ
 
-<!-- Time-stamp: "2020-05-18T03:39:31Z" -->
+<!-- Time-stamp: "2020-05-19T06:10:39Z" -->
 
 
 ## 概要
@@ -28,6 +28,23 @@
 
 TEXTAREA の rows を変更したい場合は、上の SHARED_MEMO_WIDGET_ROWS に代
 入する値を変えましょう。
+
+もし IE にも対応したいのならば、IE では height の自動調整が効きません
+ので、IE 用に height を設定することになります。しかし、height を設定す
+るとそのままでは自動調整は OFF になるので、IE 以外のブラウザで自動調整
+を残したい場合は、さらに auto_height を 1 に設定する必要があります。
+rows を変更するには結局、次のように設定することになります。
+
+```html
+<script type="text/javascript">
+SHARED_MEMO_WIDGET_ROWS=20;
+SHARED_MEMO_WIDGET_WIDTH=200;
+SHARED_MEMO_WIDGET_AUTO_WIDTH=1;
+SHARED_MEMO_WIDGET_HEIGHT=420;
+SHARED_MEMO_WIDGET_AUTO_HEIGHT=1;
+</script>
+<script type="text/javascript" src="http://jrockford.s1010.xrea.com/demo/shared_memo_widget.js"></script>
+```
 
 
 ## クローンサイトを生成する場合
@@ -76,10 +93,10 @@ http://jrockford.s1010.xrea.com/demo/ の部分は自分のサイト用に書き
 </Files>
 ```
 
-あとは、このアーカイブの README.md 以外のファイルをディレクトリに置い
-て動かしてください。上に書いたブログ等に挿入するウィジェットコードの
-shared_memo_widget.js の位置を書き換えるのを忘れずに。また、cgi のパー
-ミッションの設定も忘れずに。
+あとは、このアーカイブのファイルをディレクトリに置いて動かしてください。
+上に書いたブログ等に挿入するウィジェットコードの shared_memo_widget.js
+の位置を書き換えるのを忘れずに。また、cgi のパーミッションの設定も忘れ
+ずに。
 
 
 ## 更新情報

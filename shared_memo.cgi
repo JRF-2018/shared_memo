@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-our $VERSION = "0.0.1"; # Time-stamp: <2020-05-18T03:05:59Z>";
+our $VERSION = "0.0.2"; # Time-stamp: <2020-05-19T05:41:53Z>";
 
 ##
 ## Author:
@@ -34,6 +34,7 @@ use CGI;
 use Encode qw(encode decode);
 use Fcntl qw(:DEFAULT :flock :seek);
 use URI::Escape qw(uri_escape uri_unescape);
+use Digest::HMAC_SHA1;
 
 our $MEMO_XML = "shared_memo.xml";
 our $LOG = "shared_memo.log";
@@ -41,12 +42,14 @@ our $JS = "shared_memo.js";
 our $LOG_QR = "shared_memo_log.png";
 our $CSS = "shared_memo.css";
 our $PROGRAM = "shared_memo.cgi";
+our $KEY_FILE = "shared_memo_key.xml";
 our $MEMO_MAX = 2000;
 our $MEMO_NUM = 200;
 our $LOG_MAX = 30000000;
 our $LOG_TRUNCATE = 2000000;
-our $DATETIME = datetime();
 
+our $DATETIME = datetime();
+our $KEY;
 our $CGI = CGI->new;
 binmode(STDOUT, ":utf8");
 
@@ -78,7 +81,6 @@ sub datetime { # ISO 8601 extended format.
 }
 
 sub allot_magic {
-  my ($text) = @_;
   return substr(sprintf("%1.5f", rand(1)), 2, 4);
 }
 
@@ -110,6 +112,61 @@ sub unescape_html {
   $s =~ s/\&lt\;/</sg;
   $s =~ s/\&amp\;/\&/sg;
   return $s;
+}
+
+sub gen_key {
+  my $file = $KEY_FILE;
+  my @x;
+  for (my $i = 0; $i < 64; $i++) {
+    push(@x, int(rand(256)))
+  }
+  $KEY = pack("c*", @x);
+  my $s = unpack("H*", $KEY);
+  sysopen(my $fh, $file, O_WRONLY | O_EXCL | O_CREAT)
+    or die "Cannot open $file: $!";
+  flock($fh, LOCK_EX)
+    or die "Cannot lock $file: $!";
+  binmode($fh);
+  print $fh <<"EOT";
+<keyinfo>
+<key>$s</key>
+<generated>$DATETIME</generated>
+</keyinfo>
+EOT
+  flock($fh, LOCK_UN);
+  close($fh);
+  chmod(0600, $file);
+}
+
+sub read_key {
+  my $file = $KEY_FILE;
+
+  sysopen(my $fh, $file, O_RDONLY)
+    or die "Cannot open $file: $!";
+  flock($fh, LOCK_SH)
+    or die "Cannot lock $file: $!";
+  binmode($fh);
+  my $s = join("", <$fh>);
+  flock($fh, LOCK_UN);
+  close($fh);
+
+  if ($s !~ /<key>([^<]+)<\/key>/s) {
+    die "Key file is broken.";
+  }
+  $KEY = pack("H*", $1);
+}
+
+sub get_hash {
+  my ($text, $ip) = @_;
+
+  read_key() if ! defined $KEY;
+  my $hmac = Digest::HMAC_SHA1->new($KEY);
+  $hmac->add(encode('UTF-8', $text));
+  my $a = substr($hmac->b64digest, 0, 6);
+  $hmac = Digest::HMAC_SHA1->new($KEY);
+  $hmac->add(encode('UTF-8', $ip));
+  my $b = substr($hmac->b64digest, 0, 4);
+  return $a . $b;
 }
 
 sub memo_read {
@@ -159,12 +216,16 @@ sub memo_read_all {
       my $ip = $1;
       my $time = $2;
       my $magic = $3;
+      my $hash;
       my $text;
+      if ($c =~ /<hash>([^<]*)<\/hash>/s) {
+	$hash = $1;
+      }
       if ($c =~ /<text>([^<]*)<\/text>/s) {
 	$text = unescape_html($1);
       }
       push(@memo, {ip => $ip, time => $time, magic => $magic,
-		   text => $text});
+		   text => $text, hash => $hash});
     }
   }
   return @memo;
@@ -174,7 +235,8 @@ sub memo_write {
   my ($text) = @_;
   my $time = $DATETIME;
   my $ip = $ENV{REMOTE_ADDR} || '';
-  my $magic = allot_magic($text);
+  my $magic = allot_magic();
+  my $hash = get_hash($time . $text, $time . $ip);
   my $file = $MEMO_XML;
   sysopen(my $fh, $file, O_RDWR | O_CREAT)
     or die "Cannot open $file: $!";
@@ -187,6 +249,7 @@ sub memo_write {
   push(@memo, "<memo>\n<ip>$ip</ip>\n"
        . "<time>$time</time>\n"
        . "<magic>$magic</magic>\n"
+       . "<hash>$hash</hash>\n"
        . "<text>$text</text>\n</memo>\n");
   while ($s =~ /<\/memo>\s+/) {
     my $c = $` . $&;
@@ -231,6 +294,7 @@ sub memo_delete {
   my $success = 0;
   foreach my $c (@memo) {
     if ($c =~ /<time>\Q$time\E<\/time>\s*<magic>\Q$magic\E<\/magic>/s) {
+      $c =~ s/<hash>[^<]*<\/hash>\s*//s;
       if ($c =~ s/<text>[^<]*<\/text>\s*//s) {
 	$success = 1;
       }
@@ -253,12 +317,16 @@ sub memo_delete {
       my $ip = $1;
       my $time = $2;
       my $magic = $3;
+      my $hash;
       my $text;
+      if ($c =~ /<hash>([^<]*)<\/hash>/s) {
+	$hash = $1;
+      }
       if ($c =~ /<text>([^<]*)<\/text>/s) {
 	$text = unescape_html($1);
       }
       push(@r, {ip => $ip, time => $time, magic => $magic,
-		   text => $text});
+		text => $text, hash => $hash});
     }
   }
 
@@ -318,12 +386,13 @@ EOT
     my $ip = $x->{ip};
     my $time = $x->{time};
     my $magic = $x->{magic};
+    my $hash = $x->{hash} || "";
     my $etime = escape($time);
-    my $text = $x->{text};
+    my $text = escape_html($x->{text});
     if (defined $text) {
       print <<"EOT";
 <div class="memo">
-<div class="info"><span class="datetime">$time</span> <a rel="nofollow" href="$PROGRAM?cmd=delete&amp;time=$etime&amp;magic=$magic">削除</a></div>
+<div class="info"><span class="datetime">$time</span> <span class="hash">$hash</span> <a rel="nofollow" href="$PROGRAM?cmd=delete&amp;time=$etime&amp;magic=$magic">削除</a></div>
 <pre>$text</pre>
 </div>
 EOT
@@ -402,6 +471,8 @@ EOT
 }
 
 sub main {
+  gen_key() if ! -f $KEY_FILE;
+
   my $cmd = $CGI->param('cmd') || 'read';
   if ($cmd eq 'write') {
     my $txt = decode('UTF-8', $CGI->param('txt') || "");

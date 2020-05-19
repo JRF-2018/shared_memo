@@ -1,7 +1,7 @@
 //
 // shared_memo.js
 //
-var VERSION_shared_memo = "0.0.1"; // Time-stamp: <2020-05-18T01:12:30Z>
+var VERSION_shared_memo = "0.0.2"; // Time-stamp: <2020-05-19T05:40:55Z>
 
 //
 // Author:
@@ -69,7 +69,14 @@ function limit_char() {
 }
 
 function init(child) {
+  document.getElementById('write').disabled = true;
   var txt = document.getElementById('txt');
+  if (txt) {
+    setTimeout(limit_char, 500);
+    add_event_listener(txt, 'keyup', limit_char);
+    add_event_listener(txt, 'change', limit_char);
+  }
+
   if (child != '') {
     IFRAME_ID = child;
     setTimeout(sendHeight, 100);
@@ -79,10 +86,5 @@ function init(child) {
     add_event_listener(window, 'mouseup', function () {
       setTimeout(sendHeight, 100);
     });
-  }
-  if (txt) {
-    limit_char();
-    add_event_listener(txt, 'keyup', limit_char);
-    add_event_listener(txt, 'change', limit_char);
   }
 }

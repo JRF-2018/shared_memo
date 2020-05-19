@@ -1,5 +1,5 @@
 @charset "utf-8";
-/* Time-stamp: <2020-05-18T01:39:08Z> */
+/* Version: 0.0.2; Time-stamp: <2020-05-18T12:45:22Z> */
 
 /*
    Author:
@@ -64,6 +64,10 @@ button {
 
 .info {
    font-size: small;
+}
+
+.hash {
+   color: gray;
 }
 
 /* フォント設定は↓を参考にしました。

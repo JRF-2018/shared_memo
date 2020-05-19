@@ -1,7 +1,7 @@
 //
 // shared_memo_widget.js
 //
-var VERSION_shared_memo_widget = "0.0.1"; // Time-stamp: <2020-05-18T01:28:19Z>
+var VERSION_shared_memo_widget = "0.0.2"; // Time-stamp: <2020-05-18T10:18:36Z>
 
 //
 // Author:
@@ -35,8 +35,10 @@ var VERSION_shared_memo_widget = "0.0.1"; // Time-stamp: <2020-05-18T01:28:19Z>
   var origin = CGI.replace(/^(https?:\/\/[^\/]+)\/.*/, "$1");
   
   var auto_width = 1;
+  var auto_height = 1;
   var width = 200;
   var rows = 8;
+  var height = 250;
   var id;
   var i = 0;
 
@@ -59,6 +61,20 @@ var VERSION_shared_memo_widget = "0.0.1"; // Time-stamp: <2020-05-18T01:28:19Z>
     rows = SHARED_MEMO_WIDGET_ROWS;
   }
 
+  if (window["SHARED_MEMO_WIDGET_HEIGHT"]
+      && typeof SHARED_MEMO_WIDGET_HEIGHT == 'number') {
+    height = SHARED_MEMO_WIDGET_HEIGHT;
+    auto_height = 0;
+  }
+
+  if (window["SHARED_MEMO_WIDGET_AUTO_WIDTH"]) {
+    auto_width = SHARED_MEMO_WIDGET_AUTO_WIDTH;
+  }
+
+  if (window["SHARED_MEMO_WIDGET_AUTO_HEIGHT"]) {
+    auto_height = SHARED_MEMO_WIDGET_AUTO_HEIGHT;
+  }
+  
   var resize;
   var resize_w;
   if ((function () {})["bind"]) {
@@ -73,12 +89,14 @@ var VERSION_shared_memo_widget = "0.0.1"; // Time-stamp: <2020-05-18T01:28:19Z>
   }
 
   if (window["addEventListener"]) {
-    window.addEventListener('message', (function (e) {
-      if (e.origin == this.origin
-	 && e.data.id == this.id) {
-	document.getElementById(this.id).height = e.data.height;
-      }
-    }).bind({id: id, origin: origin}));
+    if (auto_height) {
+      window.addEventListener('message', (function (e) {
+	if (e.origin == this.origin
+	    && e.data.id == this.id) {
+	  document.getElementById(this.id).height = e.data.height;
+	}
+      }).bind({id: id, origin: origin}));
+    }
 
     if (auto_width && resize) {
       window.addEventListener('load', resize, false);
@@ -87,7 +105,7 @@ var VERSION_shared_memo_widget = "0.0.1"; // Time-stamp: <2020-05-18T01:28:19Z>
   }
 
   document.write('<iframe class="shared-memo-widget" '
-		 + 'height="250" width="' + width
+		 + 'height="' + height + '" width="' + width
 		 + '" id="' + id
 		 + '" src="' + CGI + '?child='
 		 + id + '&amp;rows=' + rows
