@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-our $VERSION = "0.0.2"; # Time-stamp: <2020-05-19T05:46:02Z>";
+our $VERSION = "0.0.3"; # Time-stamp: <2020-05-23T03:07:48Z>";
 
 ##
 ## Author:
@@ -32,6 +32,7 @@ use utf8; # Japanese
 
 use Encode qw(encode decode);
 use Fcntl qw(:DEFAULT :flock :seek);
+use Digest::SHA1;
 use Digest::HMAC_SHA1;
 use Getopt::Long;
 
@@ -42,10 +43,12 @@ our $PARSE_HTML = 0;
 our $DATETIME;
 our $IP;
 our $KEY;
+our $NO_KEY = 0;
 
 Getopt::Long::Configure("bundling", "auto_version");
 GetOptions(
 	   "k=s" => \$KEY_FILE,
+	   "no-key|n" => \$NO_KEY,
 	   "time|t=s" => \$DATETIME,
 	   "ip|i=s" => \$IP,
 	   "unescape-html|u" => \$UNESCAPE_HTML,
@@ -98,15 +101,20 @@ sub read_key {
 
 sub get_hash {
   my ($text, $ip) = @_;
+  $text = encode('UTF-8', $text);
+  $ip = encode('UTF-8', $ip);
 
   read_key() if ! defined $KEY;
+  my $sha1 = Digest::SHA1->new;
+  $sha1->add($text);
+  my $a = substr($sha1->b64digest, 0, 2);
   my $hmac = Digest::HMAC_SHA1->new($KEY);
-  $hmac->add(encode('UTF-8', $text));
-  my $a = substr($hmac->b64digest, 0, 6);
-  $hmac = Digest::HMAC_SHA1->new($KEY);
-  $hmac->add(encode('UTF-8', $ip));
+  $hmac->add($text);
   my $b = substr($hmac->b64digest, 0, 4);
-  return $a . $b;
+  $hmac = Digest::HMAC_SHA1->new($KEY);
+  $hmac->add($ip);
+  my $c = substr($hmac->b64digest, 0, 4);
+  return $a . $b . $c;
 }
 
 sub parse_html {
@@ -124,19 +132,23 @@ sub parse_html {
       $datetime = $1;
     }
     my $hash = get_hash($datetime . $text, $datetime . ($IP || ""));
-    my $h1a = substr($hash, 0, 6);
-    my $h1b = substr($hash, 6);
+    my $h1a = substr($hash, 0, 2);
+    my $h1b = substr($hash, 2, 4);
+    my $h1c = substr($hash, 6);
     my $hash2 = "          ";
     if ($p =~ /<span\s+class=\"hash\">([^<]+)/s) {
       $hash2 = $1;
     }
-    my $h2a = (length($hash2) >= 6)? substr($hash2, 0, 6) : "      ";
-    my $h2b = (length($hash2) >= 10)? substr($hash2, 6) : "     ";
+    my $h2a = (length($hash2) >= 2)? substr($hash2, 0, 2) : " ";
+    my $h2b = (length($hash2) >= 6)? substr($hash2, 2, 4) : "    ";
+    my $h2c = (length($hash2) >= 10)? substr($hash2, 6) : "    ";
+    my $n = "  ";
     my $ok = "   ";
     my $ip = "   ";
-    $ok = " ok" if $h1a eq $h2a;
-    $ip = " ip" if defined $IP && $h1b eq $h2b;
-    print "$hash$ok$ip\n";
+    $n = " n" if $h1a ne $h2a;
+    $ok = " ok" if $h1b eq $h2b;
+    $ip = " ip" if defined $IP && $h1c eq $h2c;
+    print "$hash$n$ok$ip\n";
   }
 }
 
@@ -161,6 +173,8 @@ sub print_hash {
 }
 
 sub main {
+  $KEY = " " x 64 if $NO_KEY;
+
   if (! @ARGV) {
     binmode(STDIN);
     print_hash(join("", <STDIN>));

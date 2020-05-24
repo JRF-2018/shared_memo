@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-our $VERSION = "0.0.2"; # Time-stamp: <2020-05-19T05:41:53Z>";
+our $VERSION = "0.0.3"; # Time-stamp: <2020-05-24T07:34:58Z>";
 
 ##
 ## Author:
@@ -34,11 +34,13 @@ use CGI;
 use Encode qw(encode decode);
 use Fcntl qw(:DEFAULT :flock :seek);
 use URI::Escape qw(uri_escape uri_unescape);
+use Digest::SHA1;
 use Digest::HMAC_SHA1;
 
 our $MEMO_XML = "shared_memo.xml";
 our $LOG = "shared_memo.log";
 our $JS = "shared_memo.js";
+our $LOG_JS = "shared_memo_log.js";
 our $LOG_QR = "shared_memo_log.png";
 our $CSS = "shared_memo.css";
 our $PROGRAM = "shared_memo.cgi";
@@ -76,7 +78,7 @@ sub datetime { # ISO 8601 extended format.
   my ($sec, $min, $hour, $mday, $mon, $year, $wday) = gmtime(time);
   $year += 1900;
   $mon ++;
-  return sprintf("%d-%02d-%02dT%02d:%02d%02dZ",
+  return sprintf("%d-%02d-%02dT%02d:%02d:%02dZ",
 		 $year, $mon, $mday, $hour, $min, $sec);
 }
 
@@ -158,15 +160,20 @@ sub read_key {
 
 sub get_hash {
   my ($text, $ip) = @_;
+  $text = encode('UTF-8', $text);
+  $ip = encode('UTF-8', $ip);
 
   read_key() if ! defined $KEY;
+  my $sha1 = Digest::SHA1->new;
+  $sha1->add($text);
+  my $a = substr($sha1->b64digest, 0, 2);
   my $hmac = Digest::HMAC_SHA1->new($KEY);
-  $hmac->add(encode('UTF-8', $text));
-  my $a = substr($hmac->b64digest, 0, 6);
-  $hmac = Digest::HMAC_SHA1->new($KEY);
-  $hmac->add(encode('UTF-8', $ip));
+  $hmac->add($text);
   my $b = substr($hmac->b64digest, 0, 4);
-  return $a . $b;
+  $hmac = Digest::HMAC_SHA1->new($KEY);
+  $hmac->add($ip);
+  my $c = substr($hmac->b64digest, 0, 4);
+  return $a . $b . $c;
 }
 
 sub memo_read {
@@ -218,14 +225,18 @@ sub memo_read_all {
       my $magic = $3;
       my $hash;
       my $text;
+      my $deleted;
       if ($c =~ /<hash>([^<]*)<\/hash>/s) {
 	$hash = $1;
       }
       if ($c =~ /<text>([^<]*)<\/text>/s) {
 	$text = unescape_html($1);
       }
+      if ($c =~ /<deleted>([^<]*)<\/deleted>/s) {
+	$deleted = $1;
+      }
       push(@memo, {ip => $ip, time => $time, magic => $magic,
-		   text => $text, hash => $hash});
+		   text => $text, hash => $hash, deleted => $deleted});
     }
   }
   return @memo;
@@ -233,6 +244,8 @@ sub memo_read_all {
 
 sub memo_write {
   my ($text) = @_;
+  $text =~ s/\x0d\x0a/\x0a/sg;
+
   my $time = $DATETIME;
   my $ip = $ENV{REMOTE_ADDR} || '';
   my $magic = allot_magic();
@@ -275,7 +288,7 @@ sub memo_write {
 }
 
 sub memo_delete {
-  my ($time, $magic) = @_;
+  my ($reason, $time, $magic) = @_;
   my $file = $MEMO_XML;
   sysopen(my $fh, $file, O_RDWR | O_CREAT)
     or die "Cannot open $file: $!";
@@ -295,7 +308,7 @@ sub memo_delete {
   foreach my $c (@memo) {
     if ($c =~ /<time>\Q$time\E<\/time>\s*<magic>\Q$magic\E<\/magic>/s) {
       $c =~ s/<hash>[^<]*<\/hash>\s*//s;
-      if ($c =~ s/<text>[^<]*<\/text>\s*//s) {
+      if ($c =~ s/<text>[^<]*<\/text>\s*/<deleted>$reason<\/deleted>\n/s) {
 	$success = 1;
       }
     }
@@ -319,14 +332,18 @@ sub memo_delete {
       my $magic = $3;
       my $hash;
       my $text;
+      my $deleted;
       if ($c =~ /<hash>([^<]*)<\/hash>/s) {
 	$hash = $1;
       }
       if ($c =~ /<text>([^<]*)<\/text>/s) {
 	$text = unescape_html($1);
       }
+      if ($c =~ /<deleted>([^<]*)<\/deleted>/s) {
+	$deleted = $1;
+      }
       push(@r, {ip => $ip, time => $time, magic => $magic,
-		text => $text, hash => $hash});
+		text => $text, hash => $hash, deleted => $deleted});
     }
   }
 
@@ -363,7 +380,7 @@ sub print_log_page {
 		     -charset => 'utf-8');
   print <<"EOT";
 <!DOCTYPE html>
-<html>
+<html lang="ja">
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
 <meta http-equiv="Content-Language" content="ja">
@@ -374,33 +391,75 @@ sub print_log_page {
 <!-- shared_memo.cgi version $VERSION .
      You can get it from https://github.com/JRF-2018/shared_memo . -->
 <link rel="stylesheet" href="$CSS" type="text/css" />
+<script type="text/javascript" src="$LOG_JS"></script>
 </head>
-<body>
+<body onLoad="init()">
 <img id="qr" src="$LOG_QR"/><h1>グローバル共有メモ: ログ</h1>
-<p class="back">[<a href="$PROGRAM">メモに戻る</a>]</p>
+<p class="back">[<a href="$PROGRAM">メモに戻る</a>]
+<!-- [<a href="$PROGRAM?cmd=log">リロード</a>] -->
+</p>
 EOT
 
   print "<p class=\"nolog\">まだログはありません。</p>\n" if ! @memo;
 
+  my $id = 0;
   foreach my $x (@memo) {
+    $id++;
     my $ip = $x->{ip};
     my $time = $x->{time};
     my $magic = $x->{magic};
     my $hash = $x->{hash} || "";
     my $etime = escape($time);
-    my $text = escape_html($x->{text});
+    my $text = $x->{text};
+
     if (defined $text) {
+      $text = escape_html($text);
       print <<"EOT";
 <div class="memo">
-<div class="info"><span class="datetime">$time</span> <span class="hash">$hash</span> <a rel="nofollow" href="$PROGRAM?cmd=delete&amp;time=$etime&amp;magic=$magic">削除</a></div>
+<div class="info">
+<span class="datetime">$time</span>
+<span class="hash">$hash</span>
+<form class="delete-form" id="delete-form-$id" action="$PROGRAM" method="post"
+ onSubmit="return checkSelect($id)">
+<select id="select-$id" name="reason" onChange="selectReason($id)">
+<option value="none" selected>削除理由を選んでください</option>
+<option value="hate">ムカついたから・憎悪が見てられないから</option>
+<option value="privacy">恥ずかしいから・プライバシーの侵害があるから</option>
+<option value="copyright">著作権・猥褻の問題があるから</option>
+<option value="rewrite">修正したから・書き直したから</option>
+<option value="other">その他の理由で</option>
+</select>
+<input type="submit" id="button-$id" value="削除"/>
+<input type="hidden" name="cmd" value="delete" />
+<input type="hidden" name="time" value="$time" />
+<input type="hidden" name="magic" value="$magic" />
+</form>
+</div>
 <pre>$text</pre>
 </div>
 EOT
     } else {
+      my $deleted = $x->{deleted};
+      if (defined $deleted) {
+	my %reason = ('other' => 'その他の理由で',
+		      'rewrite' => '修正したから・書き直したから',
+		      'copyright' => '著作権・猥褻の問題があるから',
+		      'privacy' =>
+		      '恥ずかしいから・プライバシーの侵害があるから',
+		      'hate' => 'ムカついたから・憎悪が見てられないから',
+		     );
+	$deleted = (exists $reason{$deleted})? $reason{$deleted}
+	  : $reason{'other'};
+      }
+      if (defined $deleted) {
+	$deleted = " (" . escape_html($deleted) . ")";
+      } else {
+	$deleted = "";
+      }
       print <<"EOT";
 <div class="memo">
 <div class="info"><span class="datetime">$time</span></div>
-<pre class="deleted">削除</pre>
+<pre class="deleted">削除$deleted</pre>
 </div>
 EOT
     }
@@ -439,7 +498,7 @@ sub print_page {
 		     -charset => 'utf-8');
   print <<"EOT";
 <!DOCTYPE html>
-<html>
+<html lang="ja">
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
 <meta http-equiv="Content-Language" content="ja">
@@ -461,7 +520,8 @@ body { background: transparent; $childcss}
 <textarea id="txt" name="txt" cols="20" rows="$rows">$memo</textarea>
 <br />
 <span id="char-count">---/$MEMO_MAX</span>
-<button type="submit" id="write" name="cmd" value="write">書き換え</button>
+<input type="submit" id="write" value="書き換え" />
+<input type="hidden" name="cmd" value="write" />
 <a href="$PROGRAM?cmd=log" target="_top">ログ</a>
 $hidden
 </form>
@@ -485,13 +545,21 @@ sub main {
     my $agent = $ENV{HTTP_USER_AGENT} || 'unknown';
     log_append("$DATETIME write $magic $ip $agent\n");
   } elsif ($cmd eq 'delete') {
+    my $reason = decode('UTF-8', $CGI->param('reason') || "none");
+    if (length($reason) > 64 || $reason !~ /^[01-9A-Za-z_]+$/s) {
+      $reason = "none";
+    }
     my $time = decode('UTF-8', $CGI->param('time') || "");
     my $magic = decode('UTF-8', $CGI->param('magic') || "");
-    my ($success, @r) = memo_delete($time, $magic);
-    print_log_page(@r);
-    my $ip = $ENV{REMOTE_ADDR} || 'unknown';
-    my $agent = $ENV{HTTP_USER_AGENT} || 'unknown';
-    log_append("$DATETIME delete $time $magic $ip $agent\n") if $success;
+    if ($reason eq "none") {
+      print_log_page(memo_read_all());
+    } else {
+      my ($success, @r) = memo_delete($reason, $time, $magic);
+      print_log_page(@r);
+      my $ip = $ENV{REMOTE_ADDR} || 'unknown';
+      my $agent = $ENV{HTTP_USER_AGENT} || 'unknown';
+      log_append("$DATETIME delete $time $magic $ip $agent\n") if $success;
+    }
   } elsif ($cmd eq 'log') {
     print_log_page(memo_read_all());
   } else {

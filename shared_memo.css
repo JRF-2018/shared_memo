@@ -1,5 +1,5 @@
 @charset "utf-8";
-/* Version: 0.0.2; Time-stamp: <2020-05-18T12:45:22Z> */
+/* Version: 0.0.3; Time-stamp: <2020-05-24T07:33:34Z> */
 
 /*
    Author:
@@ -51,6 +51,11 @@ h1 {
 
 .deleted {
    color: gray;
+   font-size: small;
+}
+
+.delete-form {
+   display: inline;
 }
 
 textarea {
@@ -58,12 +63,17 @@ textarea {
    margin: 0;
 }
 
-button {
-   font-size: smaller;
+#write {
+   /* font-size: smaller; */
 }
 
 .info {
    font-size: small;
+}
+
+.info span {
+   font-family: Consolas, "Courier New", Courier, Monaco,
+      monospace, serif;
 }
 
 .hash {
