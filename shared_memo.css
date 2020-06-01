@@ -1,5 +1,5 @@
 @charset "utf-8";
-/* Version: 0.0.3; Time-stamp: <2020-05-24T07:33:34Z> */
+/* Version: 0.0.4; Time-stamp: <2020-06-01T06:43:33Z> */
 
 /*
    Author:
@@ -49,13 +49,26 @@ h1 {
    clear: both;
 }
 
+.alert {
+   clear: both;
+   font-size: small;
+}
+
 .deleted {
    color: gray;
    font-size: small;
 }
 
-.delete-form {
-   display: inline;
+.info span.ipmark {
+/*   font-family: '梅Pゴシック',Textar,'ＭＳ Ｐゴシック','MS PGothic',sans-serif;*/
+}
+
+.deleted-by-me {
+   color: teal;
+}
+
+.deleted-by-other {
+   color: red;
 }
 
 textarea {
@@ -78,6 +91,11 @@ textarea {
 
 .hash {
    color: gray;
+}
+
+.your-ip {
+   text-align: right;
+   font-size: x-small;
 }
 
 /* フォント設定は↓を参考にしました。

@@ -1,7 +1,7 @@
 //
 // shared_memo_log.js
 //
-var VERSION_shared_memo = "0.0.3"; // Time-stamp: <2020-05-23T05:21:46Z>
+var VERSION_shared_memo = "0.0.4"; // Time-stamp: <2020-05-27T12:50:47Z>
 
 //
 // Author:
@@ -28,15 +28,6 @@ var VERSION_shared_memo = "0.0.3"; // Time-stamp: <2020-05-23T05:21:46Z>
 //   intention is legitimately fulfilled.
 //
 
-function checkSelect(i) {
-  if (document.getElementById('select-' + i).value != "none") {
-    return true;
-  }
-  document.getElementById('button-' + i).disabled = true;
-  document.getElementById('select-' + i).style.display = 'inline';
-  return false;
-}
-
 function selectReason(i) {
   var reason = document.getElementById('select-' + i).value;
   if (reason == "none") {
@@ -45,6 +36,31 @@ function selectReason(i) {
     document.getElementById('button-' + i).disabled = false;
 //    document.getElementById('delete-form-' + i).submit();
   }
+}
+
+function verifyCallback(response) {
+  if (response) {
+    document.getElementById("delete-form-" + this.i).submit();
+  }
+}
+
+function checkSubmit(i) {
+  if (document.getElementById('select-' + i).value != "none") {
+    if (! USE_RECAPTCHA) {
+      return true;
+    }
+
+    document.getElementById('button-' + i).disabled = true;
+    grecaptcha.render(document.getElementById('captcha-' + i), {
+      'sitekey' : RECAPTCHA_SITE_KEY,
+      'size': /* 'compact' */ 'normal',
+      'callback': verifyCallback.bind({i: i})
+    });
+    return false;
+  }
+  document.getElementById('button-' + i).disabled = true;
+  document.getElementById('select-' + i).style.display = 'inline';
+  return false;
 }
 
 function init() {

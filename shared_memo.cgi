@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-our $VERSION = "0.0.3"; # Time-stamp: <2020-05-24T07:34:58Z>";
+our $VERSION = "0.0.4"; # Time-stamp: <2020-06-01T06:43:06Z>";
 
 ##
 ## Author:
@@ -36,7 +36,10 @@ use Fcntl qw(:DEFAULT :flock :seek);
 use URI::Escape qw(uri_escape uri_unescape);
 use Digest::SHA1;
 use Digest::HMAC_SHA1;
+use JSON qw(decode_json);
 
+our $TITLE = "グローバル共有メモ"; ## or "街角白板１号"
+our $DEFAULT_ROWS = 8;
 our $MEMO_XML = "shared_memo.xml";
 our $LOG = "shared_memo.log";
 our $JS = "shared_memo.js";
@@ -49,9 +52,19 @@ our $MEMO_MAX = 2000;
 our $MEMO_NUM = 200;
 our $LOG_MAX = 30000000;
 our $LOG_TRUNCATE = 2000000;
+our $COOKIE_NAME = "shared_memo_cgi__session_id";
+our $COOKIE_PATH = "/";
+
+our $USE_RECAPTCHA = 0;
+our $RECAPTCHA_API = "https://www.google.com/recaptcha/api/siteverify";
+our $RECAPTCHA_SECRET_KEY = "__Your_Secret_Key__";
+our $RECAPTCHA_SITE_KEY = "__Your_Site_Key__";
 
 our $DATETIME = datetime();
 our $KEY;
+our $SESSION_ID;
+our $SESSION_DATE;
+
 our $CGI = CGI->new;
 binmode(STDOUT, ":utf8");
 
@@ -116,13 +129,23 @@ sub unescape_html {
   return $s;
 }
 
+## $SESSION_ID に日時を含めるのは、更新の10日前後以前に遡って攻撃がで
+## きないように。
+sub new_session_id {
+  my @x;
+  for (my $i = 0; $i < 16; $i++) {
+    push(@x, int(rand(256)))
+  }
+  return unpack("H*", pack("C*", @x)) . ":" . $DATETIME;
+}
+
 sub gen_key {
   my $file = $KEY_FILE;
   my @x;
   for (my $i = 0; $i < 64; $i++) {
     push(@x, int(rand(256)))
   }
-  $KEY = pack("c*", @x);
+  $KEY = pack("C*", @x);
   my $s = unpack("H*", $KEY);
   sysopen(my $fh, $file, O_WRONLY | O_EXCL | O_CREAT)
     or die "Cannot open $file: $!";
@@ -178,7 +201,7 @@ sub get_hash {
 
 sub memo_read {
   my $file = $MEMO_XML;
-  sysopen(my $fh, $file, O_RDWR | O_CREAT)
+  sysopen(my $fh, $file, O_RDONLY | O_CREAT)
     or die "Cannot open $file: $!";
   flock($fh, LOCK_SH)
     or die "Cannot lock $file: $!";
@@ -205,9 +228,31 @@ sub memo_read {
   return unescape_html($1);
 }
 
+sub parse_memo {
+  my ($c) = @_;
+  my $r = {};
+  foreach my $n (qw(ip time magic hash text session_id deleted deleted_by)) {
+    $r->{$n} = undef;
+  }
+
+  $c =~ s/<memo>//s;
+  $c =~ s/<\/memo>//s;
+  while ($c =~ s/<([^\/>]+)>([^<]*)<\/\1>//s) {
+    if ($1 eq "text") {
+      $r->{$1} = unescape_html($2);
+    } else {
+      $r->{$1} = $2;
+    }
+  }
+  if (defined $r->{ip} && defined $r->{time} && defined $r->{magic}) {
+    return $r;
+  }
+  return undef;
+}
+
 sub memo_read_all {
   my $file = $MEMO_XML;
-  sysopen(my $fh, $file, O_RDWR | O_CREAT)
+  sysopen(my $fh, $file, O_RDONLY | O_CREAT)
     or die "Cannot open $file: $!";
   flock($fh, LOCK_SH)
     or die "Cannot lock $file: $!";
@@ -219,25 +264,8 @@ sub memo_read_all {
   while ($s =~ /<\/memo>\s+/) {
     my $c = $` . $&;
     $s = $';
-    if ($c =~ /<ip>([^<]*)<\/ip>\s*<time>([^<]*)<\/time>\s*<magic>([^<]*)<\/magic>/s) {
-      my $ip = $1;
-      my $time = $2;
-      my $magic = $3;
-      my $hash;
-      my $text;
-      my $deleted;
-      if ($c =~ /<hash>([^<]*)<\/hash>/s) {
-	$hash = $1;
-      }
-      if ($c =~ /<text>([^<]*)<\/text>/s) {
-	$text = unescape_html($1);
-      }
-      if ($c =~ /<deleted>([^<]*)<\/deleted>/s) {
-	$deleted = $1;
-      }
-      push(@memo, {ip => $ip, time => $time, magic => $magic,
-		   text => $text, hash => $hash, deleted => $deleted});
-    }
+    my $x = parse_memo($c);
+    push(@memo, $x) if defined $x;
   }
   return @memo;
 }
@@ -263,6 +291,7 @@ sub memo_write {
        . "<time>$time</time>\n"
        . "<magic>$magic</magic>\n"
        . "<hash>$hash</hash>\n"
+       . "<session_id>$SESSION_ID</session_id>\n"
        . "<text>$text</text>\n</memo>\n");
   while ($s =~ /<\/memo>\s+/) {
     my $c = $` . $&;
@@ -289,6 +318,7 @@ sub memo_write {
 
 sub memo_delete {
   my ($reason, $time, $magic) = @_;
+  my $ip = $ENV{REMOTE_ADDR} || "";
   my $file = $MEMO_XML;
   sysopen(my $fh, $file, O_RDWR | O_CREAT)
     or die "Cannot open $file: $!";
@@ -308,7 +338,7 @@ sub memo_delete {
   foreach my $c (@memo) {
     if ($c =~ /<time>\Q$time\E<\/time>\s*<magic>\Q$magic\E<\/magic>/s) {
       $c =~ s/<hash>[^<]*<\/hash>\s*//s;
-      if ($c =~ s/<text>[^<]*<\/text>\s*/<deleted>$reason<\/deleted>\n/s) {
+      if ($c =~ s/<text>[^<]*<\/text>\s*/<deleted>$reason<\/deleted>\n<deleted_by>$SESSION_ID\@$ip<\/deleted_by>\n/s) {
 	$success = 1;
       }
     }
@@ -326,25 +356,8 @@ sub memo_delete {
 
   my @r;
   foreach my $c (@memo) {
-    if ($c =~ /<ip>([^<]*)<\/ip>\s*<time>([^<]*)<\/time>\s*<magic>([^<]*)<\/magic>/s) {
-      my $ip = $1;
-      my $time = $2;
-      my $magic = $3;
-      my $hash;
-      my $text;
-      my $deleted;
-      if ($c =~ /<hash>([^<]*)<\/hash>/s) {
-	$hash = $1;
-      }
-      if ($c =~ /<text>([^<]*)<\/text>/s) {
-	$text = unescape_html($1);
-      }
-      if ($c =~ /<deleted>([^<]*)<\/deleted>/s) {
-	$deleted = $1;
-      }
-      push(@r, {ip => $ip, time => $time, magic => $magic,
-		text => $text, hash => $hash, deleted => $deleted});
-    }
+    my $x = parse_memo($c);
+    push(@r, $x) if defined $x;
   }
 
   return ($success, @r);
@@ -374,10 +387,44 @@ sub log_append {
   close($fh);
 }
 
+sub check_recaptcha {
+  require LWP::UserAgent;
+
+  my $response = $CGI->param('g-recaptcha-response');
+  die "No g-recaptcha-response. You need JavaScript to post."
+    if ! defined $response;
+  my $ua = LWP::UserAgent->new();
+  my $remoteip = $ENV{REMOTE_ADDR};
+  my $greply = $ua->post($RECAPTCHA_API,
+			 {
+			  remoteip => $remoteip,
+			  response => $response,
+			  secret => $RECAPTCHA_SECRET_KEY,
+			 });
+  if ($greply->is_success()) {
+    my $result = decode_json($greply->decoded_content());
+    if ($result->{success}) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
 sub print_log_page {
   my (@memo) = @_;
+  my $recaptcha_script = "";
+  $recaptcha_script = "<script type=\"text/javascript\" src=\"https://www.google.com/recaptcha/api.js?render=explicit\" async defer></script>"
+    if $USE_RECAPTCHA;
+  my $this_user = "$SESSION_ID\@" . ($ENV{REMOTE_ADDR} || '');
+
+  my $ncookie = $CGI->cookie(-name => $COOKIE_NAME,
+			     -path => $COOKIE_PATH,
+			     -value => $SESSION_ID,
+			     -expires => '+7d');
+
   print $CGI->header(-type => 'text/html',
-		     -charset => 'utf-8');
+		     -charset => 'utf-8',
+		     -cookie => [$ncookie]);
   print <<"EOT";
 <!DOCTYPE html>
 <html lang="ja">
@@ -387,17 +434,24 @@ sub print_log_page {
 <meta name="robots" content="noindex,nofollow" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 
-<title>グローバル共有メモ: ログ</title>
+<title>$TITLE: ログ</title>
 <!-- shared_memo.cgi version $VERSION .
      You can get it from https://github.com/JRF-2018/shared_memo . -->
 <link rel="stylesheet" href="$CSS" type="text/css" />
+<script type="text/javascript">
+USE_RECAPTCHA=$USE_RECAPTCHA;
+RECAPTCHA_SITE_KEY="$RECAPTCHA_SITE_KEY";
+</script>
 <script type="text/javascript" src="$LOG_JS"></script>
 </head>
+$recaptcha_script
 <body onLoad="init()">
-<img id="qr" src="$LOG_QR"/><h1>グローバル共有メモ: ログ</h1>
+<div class="container" id="log-container">
+<img id="qr" src="$LOG_QR"/><h1>$TITLE: ログ</h1>
 <p class="back">[<a href="$PROGRAM">メモに戻る</a>]
 <!-- [<a href="$PROGRAM?cmd=log">リロード</a>] -->
 </p>
+<p class="alert">※ ここの対話にはたくさんのフィクション・自作自演が含まれてます。</p>
 EOT
 
   print "<p class=\"nolog\">まだログはありません。</p>\n" if ! @memo;
@@ -409,18 +463,23 @@ EOT
     my $time = $x->{time};
     my $magic = $x->{magic};
     my $hash = $x->{hash} || "";
+    my $session_id = $x->{session_id} || "";
+    my $user = "$session_id\@$ip";
     my $etime = escape($time);
     my $text = $x->{text};
+    my $ipmark = ($SESSION_ID eq $session_id)? "●" : "○";
 
     if (defined $text) {
       $text = escape_html($text);
+
       print <<"EOT";
 <div class="memo">
+<form class="delete-form" id="delete-form-$id" action="$PROGRAM" method="post"
+ onSubmit="return checkSubmit($id)">
 <div class="info">
+<span class="ipmark">$ipmark</span>
 <span class="datetime">$time</span>
 <span class="hash">$hash</span>
-<form class="delete-form" id="delete-form-$id" action="$PROGRAM" method="post"
- onSubmit="return checkSelect($id)">
 <select id="select-$id" name="reason" onChange="selectReason($id)">
 <option value="none" selected>削除理由を選んでください</option>
 <option value="hate">ムカついたから・憎悪が見てられないから</option>
@@ -429,17 +488,23 @@ EOT
 <option value="rewrite">修正したから・書き直したから</option>
 <option value="other">その他の理由で</option>
 </select>
-<input type="submit" id="button-$id" value="削除"/>
+<input type="submit" id="button-$id" value="削除" />
+</div>
+<div id="captcha-$id" class="captcha delete-captcha"></div>
 <input type="hidden" name="cmd" value="delete" />
 <input type="hidden" name="time" value="$time" />
 <input type="hidden" name="magic" value="$magic" />
 </form>
-</div>
 <pre>$text</pre>
 </div>
 EOT
     } else {
       my $deleted = $x->{deleted};
+      my $deleted_by = $x->{deleted_by} || "";
+      my $delses = $deleted_by;
+      $delses =~ s/\@.*$//s;
+      my $class = ($SESSION_ID eq $delses)? " deleted-by-me"
+	: " deleted-by-other";
       if (defined $deleted) {
 	my %reason = ('other' => 'その他の理由で',
 		      'rewrite' => '修正したから・書き直したから',
@@ -458,7 +523,13 @@ EOT
       }
       print <<"EOT";
 <div class="memo">
-<div class="info"><span class="datetime">$time</span></div>
+<form class="deleted-form" id="delete-form-$id" action="?" method="post">
+<div class="info">
+<span class="ipmark$class">$ipmark</span>
+<span class="datetime">$time</span>
+</div>
+<input type="hidden" name="cmd" value="log" />
+</form>
 <pre class="deleted">削除$deleted</pre>
 </div>
 EOT
@@ -471,7 +542,10 @@ EOT
 <p class="last">$time より前のものは残っていません。</p>
 EOT
   }
+  my $your_ip = $ENV{REMOTE_ADDR} || "不明";
   print <<"EOT";
+<p class="your-ip">■ あなたは $DATETIME に IPアドレス $your_ip からアクセスしています。</p>
+</div>
 </body>
 </html>
 EOT
@@ -485,17 +559,26 @@ sub print_page {
   if ($child !~ /^[\-01-9A-Za-z_]+$/s){
     $child = '';
   }
-  my $rows = $CGI->param('rows') || 8;
+  my $rows = $CGI->param('rows') || $DEFAULT_ROWS;
   if ($rows !~ /^[01-9]+$/s) {
-    $rows = 8;
+    $rows = $DEFAULT_ROWS;
   }
+  my $recaptcha_script = "";
+  $recaptcha_script = "<script type=\"text/javascript\" src=\"https://www.google.com/recaptcha/api.js?render=explicit\" async defer></script>"
+    if $USE_RECAPTCHA;
   my $childcss = ($child)? "font-size: small; margin:0; padding: 0; " : "";
   my $hidden = "<input type=\"hidden\" name=\"rows\" value=\"$rows\" />";
   $hidden .= "<input type=\"hidden\" name=\"child\" value=\"$child\" />\n"
     if $child;
 
+  my $ncookie = $CGI->cookie(-name => $COOKIE_NAME,
+			     -path => $COOKIE_PATH,
+			     -value => $SESSION_ID,
+			     -expires => '+7d');
+
   print $CGI->header(-type => 'text/html',
-		     -charset => 'utf-8');
+		     -charset => 'utf-8',
+		     -cookie => [$ncookie]);
   print <<"EOT";
 <!DOCTYPE html>
 <html lang="ja">
@@ -505,36 +588,75 @@ sub print_page {
 <meta name="robots" content="noindex,nofollow" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 
-<title>グローバル共有メモ</title>
+<title>$TITLE</title>
 <!-- shared_memo.cgi version $VERSION .
      You can get it from https://github.com/JRF-2018/shared_memo . -->
 <link rel="stylesheet" href="$CSS" type="text/css" />
 <style type="text/css">
 body { background: transparent; $childcss}
 </style>
+<script type="text/javascript">
+USE_RECAPTCHA=$USE_RECAPTCHA;
+RECAPTCHA_SITE_KEY="$RECAPTCHA_SITE_KEY";
+</script>
 <script type="text/javascript" src="$JS"></script>
+$recaptcha_script
 </head>
 <body onLoad="init('$child')">
-<div class="title">グローバル共有メモ</div>
-<form action="$PROGRAM" method="post">
+<div class="container" id="write-container">
+<div class="title">$TITLE</div>
+<form id="write-form" action="$PROGRAM" method="post"
+ onSubmit="return checkSubmit()">
+<div id="write-main">
 <textarea id="txt" name="txt" cols="20" rows="$rows">$memo</textarea>
 <br />
 <span id="char-count">---/$MEMO_MAX</span>
-<input type="submit" id="write" value="書き換え" />
+<input type="submit" id="write" value="書き換え"/>
 <input type="hidden" name="cmd" value="write" />
 <a href="$PROGRAM?cmd=log" target="_top">ログ</a>
+</div>
+<div id="captcha" class="captcha write-captcha"></div>
 $hidden
 </form>
+</div>
 </body>
 </html>
 EOT
 }
 
+sub check_session_date {
+  my ($date) = @_;
+  return 0 if $date !~ /^(\d+)-(\d+)-(\d+)T/;
+  my $y1 = $1;
+  my $m1 = $2;
+  my $d1 = $3;
+  return 0 if $DATETIME !~ /^(\d+)-(\d+)-(\d+)T/;
+  my $y2 = $1;
+  my $m2 = $2;
+  my $d2 = $3;
+  return 0 if $y1 != $y2 || $m1 != $m2;
+  $d1 = "29" if $d1 > 29;
+  $d2 = "29" if $d2 > 29;
+  return substr($d1, 0, 1) eq substr($d2, 0, 1);
+}
+
 sub main {
   gen_key() if ! -f $KEY_FILE;
 
+  $SESSION_ID = $CGI->cookie($COOKIE_NAME);
+  if (defined $SESSION_ID
+      && $SESSION_ID =~ /^[A-Fa-f01-9]{32}\:(\d+-\d\d-\d\dT\d\d:\d\d:\d\dZ)$/s
+      && check_session_date($1)) {
+    ## pass
+  } else {
+    $SESSION_ID = new_session_id();
+  }
+
   my $cmd = $CGI->param('cmd') || 'read';
   if ($cmd eq 'write') {
+    if ($USE_RECAPTCHA) {
+      check_recaptcha() or die "reCAPTCHA was failed.";
+    }
     my $txt = decode('UTF-8', $CGI->param('txt') || "");
     if (length($txt) > $MEMO_MAX) {
       $txt = substr($txt, 0, $MEMO_MAX);
@@ -545,6 +667,9 @@ sub main {
     my $agent = $ENV{HTTP_USER_AGENT} || 'unknown';
     log_append("$DATETIME write $magic $ip $agent\n");
   } elsif ($cmd eq 'delete') {
+    if ($USE_RECAPTCHA) {
+      check_recaptcha() or die "reCAPTCHA was failed.";
+    }
     my $reason = decode('UTF-8', $CGI->param('reason') || "none");
     if (length($reason) > 64 || $reason !~ /^[01-9A-Za-z_]+$/s) {
       $reason = "none";

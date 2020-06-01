@@ -1,7 +1,7 @@
 //
 // shared_memo.js
 //
-var VERSION_shared_memo = "0.0.2"; // Time-stamp: <2020-05-19T05:40:55Z>
+var VERSION_shared_memo = "0.0.4"; // Time-stamp: <2020-05-27T12:44:38Z>
 
 //
 // Author:
@@ -66,6 +66,27 @@ function limit_char() {
     c.style.color = "gray";
     b.disabled = false;
   }
+}
+
+function verifyCallback(response) {
+  if (response) {
+    document.getElementById("write-form").submit();
+  }
+}
+
+function checkSubmit() {
+  if (! USE_RECAPTCHA) {
+    return true;
+  }
+
+  document.getElementById('write-main').style.display = 'none';
+  grecaptcha.render(document.getElementById('captcha'), {
+    'sitekey' : RECAPTCHA_SITE_KEY,
+    'size': 'compact' /*'normal'*/,
+    'callback': verifyCallback
+  });
+
+  return false;
 }
 
 function init(child) {
