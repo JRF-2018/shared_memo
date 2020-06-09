@@ -1,5 +1,5 @@
 @charset "utf-8";
-/* Version: 0.0.4; Time-stamp: <2020-06-01T06:43:33Z> */
+/* Version: 0.0.5; Time-stamp: <2020-06-09T06:05:45Z> */
 
 /*
    Author:
@@ -87,6 +87,19 @@ textarea {
 .info span {
    font-family: Consolas, "Courier New", Courier, Monaco,
       monospace, serif;
+}
+
+span.datetime a {
+   text-decoration: none;
+   color: inherit;
+}
+
+span.datetime a:visited {
+   color: inherit;
+}
+
+span.datetime a:hover {
+   color: gray;
 }
 
 .hash {

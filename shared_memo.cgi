@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-our $VERSION = "0.0.4"; # Time-stamp: <2020-06-01T06:43:06Z>";
+our $VERSION = "0.0.5"; # Time-stamp: <2020-06-09T06:04:25Z>";
 
 ##
 ## Author:
@@ -319,6 +319,8 @@ sub memo_write {
 sub memo_delete {
   my ($reason, $time, $magic) = @_;
   my $ip = $ENV{REMOTE_ADDR} || "";
+  my $hash = substr(get_hash($time . $reason, $time . $ip), 6);
+
   my $file = $MEMO_XML;
   sysopen(my $fh, $file, O_RDWR | O_CREAT)
     or die "Cannot open $file: $!";
@@ -337,7 +339,7 @@ sub memo_delete {
   my $success = 0;
   foreach my $c (@memo) {
     if ($c =~ /<time>\Q$time\E<\/time>\s*<magic>\Q$magic\E<\/magic>/s) {
-      $c =~ s/<hash>[^<]*<\/hash>\s*//s;
+      $c =~ s/<hash>[^<]*<\/hash>\s*/<hash>$hash<\/hash>\n/s;
       if ($c =~ s/<text>[^<]*<\/text>\s*/<deleted>$reason<\/deleted>\n<deleted_by>$SESSION_ID\@$ip<\/deleted_by>\n/s) {
 	$success = 1;
       }
@@ -451,7 +453,9 @@ $recaptcha_script
 <p class="back">[<a href="$PROGRAM">メモに戻る</a>]
 <!-- [<a href="$PROGRAM?cmd=log">リロード</a>] -->
 </p>
-<p class="alert">※ ここの対話にはたくさんのフィクション・自作自演が含まれてます。</p>
+<p class="alert">※ここにはたくさんのフィクション・自作自演が含まれてます。<br/>
+※無用な削除はおやめください。
+</p>
 EOT
 
   print "<p class=\"nolog\">まだログはありません。</p>\n" if ! @memo;
@@ -468,17 +472,19 @@ EOT
     my $etime = escape($time);
     my $text = $x->{text};
     my $ipmark = ($SESSION_ID eq $session_id)? "●" : "○";
+    my $memo_id = "memo_${time}_$magic";
+    $memo_id =~ s/[\:\-]//g;
 
     if (defined $text) {
       $text = escape_html($text);
 
       print <<"EOT";
-<div class="memo">
+<div class="memo" id="$memo_id">
 <form class="delete-form" id="delete-form-$id" action="$PROGRAM" method="post"
  onSubmit="return checkSubmit($id)">
 <div class="info">
 <span class="ipmark">$ipmark</span>
-<span class="datetime">$time</span>
+<span class="datetime"><a href="$PROGRAM?cmd=log#$memo_id">$time</a></span>
 <span class="hash">$hash</span>
 <select id="select-$id" name="reason" onChange="selectReason($id)">
 <option value="none" selected>削除理由を選んでください</option>
@@ -526,7 +532,8 @@ EOT
 <form class="deleted-form" id="delete-form-$id" action="?" method="post">
 <div class="info">
 <span class="ipmark$class">$ipmark</span>
-<span class="datetime">$time</span>
+<span class="datetime"><a href="$PROGRAM?cmd=log#$memo_id">$time</a></span>
+<span class="hash">$hash</span>
 </div>
 <input type="hidden" name="cmd" value="log" />
 </form>

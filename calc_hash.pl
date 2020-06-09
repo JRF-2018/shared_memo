@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-our $VERSION = "0.0.3"; # Time-stamp: <2020-05-23T03:07:48Z>";
+our $VERSION = "0.0.5"; # Time-stamp: <2020-06-09T06:09:15Z>";
 
 ##
 ## Author:
@@ -120,35 +120,57 @@ sub get_hash {
 sub parse_html {
   my ($s) = @_;
 
-  while ($s =~ /<pre>([^<]*)/s) {
+  while ($s =~ /<pre( [^>]*)?>([^<]*)/s) {
     my $p = $`;
     $s = $';
-    my $text = unescape_html($1);
+    my $text = unescape_html($2);
+    my $class = $1 || "";
+    my $deleted = ($class =~ /deleted/);
     my $datetime = $DATETIME;
     if (! defined $DATETIME) {
-      if ($p !~ /<span\s+class=\"datetime\">([^<]+)/s) {
+      if ($p !~ /<span\s+class=\"datetime\">\s*<a[^>]+>([^<]+)/s) {
 	die "You need to specify -t DATETIME .\n";
       }
       $datetime = $1;
     }
     my $hash = get_hash($datetime . $text, $datetime . ($IP || ""));
-    my $h1a = substr($hash, 0, 2);
-    my $h1b = substr($hash, 2, 4);
-    my $h1c = substr($hash, 6);
-    my $hash2 = "          ";
-    if ($p =~ /<span\s+class=\"hash\">([^<]+)/s) {
-      $hash2 = $1;
+    if ($deleted) {
+      my $h1a = substr($hash, 0, 2);
+      my $h1b = substr($hash, 2, 4);
+      my $h1c = substr($hash, 6);
+      my $hash2 = "          ";
+      if ($p =~ /<span\s+class=\"hash\">([^<]+)/s) {
+	$hash2 = $1;
+      }
+      my $h2a = "  ";
+      my $h2b = "    ";
+      my $h2c = $hash2;
+      my $n = "  ";
+      my $ok = "   ";
+      my $ip = "   ";
+      # $n = " n" if $h1a ne $h2a;
+      # $ok = " ok" if $h1b eq $h2b;
+      $ip = " ip" if defined $IP && $h1c eq $h2c;
+      print "      $h1c$n$ok$ip\n";
+    } else {
+      my $h1a = substr($hash, 0, 2);
+      my $h1b = substr($hash, 2, 4);
+      my $h1c = substr($hash, 6);
+      my $hash2 = "          ";
+      if ($p =~ /<span\s+class=\"hash\">([^<]+)/s) {
+	$hash2 = $1;
+      }
+      my $h2a = (length($hash2) >= 2)? substr($hash2, 0, 2) : " ";
+      my $h2b = (length($hash2) >= 6)? substr($hash2, 2, 4) : "    ";
+      my $h2c = (length($hash2) >= 10)? substr($hash2, 6) : "    ";
+      my $n = "  ";
+      my $ok = "   ";
+      my $ip = "   ";
+      $n = " n" if $h1a ne $h2a;
+      $ok = " ok" if $h1b eq $h2b;
+      $ip = " ip" if defined $IP && $h1c eq $h2c;
+      print "$hash$n$ok$ip\n";
     }
-    my $h2a = (length($hash2) >= 2)? substr($hash2, 0, 2) : " ";
-    my $h2b = (length($hash2) >= 6)? substr($hash2, 2, 4) : "    ";
-    my $h2c = (length($hash2) >= 10)? substr($hash2, 6) : "    ";
-    my $n = "  ";
-    my $ok = "   ";
-    my $ip = "   ";
-    $n = " n" if $h1a ne $h2a;
-    $ok = " ok" if $h1b eq $h2b;
-    $ip = " ip" if defined $IP && $h1c eq $h2c;
-    print "$hash$n$ok$ip\n";
   }
 }
 
