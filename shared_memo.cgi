@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-our $VERSION = "0.0.5"; # Time-stamp: <2020-06-09T06:04:25Z>";
+our $VERSION = "0.0.6"; # Time-stamp: <2020-06-14T13:58:23Z>";
 
 ##
 ## Author:
@@ -37,9 +37,12 @@ use URI::Escape qw(uri_escape uri_unescape);
 use Digest::SHA1;
 use Digest::HMAC_SHA1;
 use JSON qw(decode_json);
+use Time::Piece;
 
 our $TITLE = "グローバル共有メモ"; ## or "街角白板１号"
 our $DEFAULT_ROWS = 8;
+our $DELETABLE_HOUR = 18;
+our @WRITABLE_IP = ();
 our $MEMO_XML = "shared_memo.xml";
 our $LOG = "shared_memo.log";
 our $JS = "shared_memo.js";
@@ -61,6 +64,7 @@ our $RECAPTCHA_SECRET_KEY = "__Your_Secret_Key__";
 our $RECAPTCHA_SITE_KEY = "__Your_Site_Key__";
 
 our $DATETIME = datetime();
+our $DATETIME_PIECE = Time::Piece->strptime($DATETIME, '%Y-%m-%dT%H:%M:%SZ');
 our $KEY;
 our $SESSION_ID;
 our $SESSION_DATE;
@@ -339,9 +343,24 @@ sub memo_delete {
   my $success = 0;
   foreach my $c (@memo) {
     if ($c =~ /<time>\Q$time\E<\/time>\s*<magic>\Q$magic\E<\/magic>/s) {
-      $c =~ s/<hash>[^<]*<\/hash>\s*/<hash>$hash<\/hash>\n/s;
-      if ($c =~ s/<text>[^<]*<\/text>\s*/<deleted>$reason<\/deleted>\n<deleted_by>$SESSION_ID\@$ip<\/deleted_by>\n/s) {
-	$success = 1;
+      my $deletable = 0;
+      if ($c =~ /<session_id>([^<]*)<\/session_id>/) {
+	my $session_id = $1;
+	if ($SESSION_ID eq $session_id
+	    || check_deletable_date($time)) {
+	  $deletable = 1;
+	}
+      } else {
+	$deletable = 1;
+      }
+      if ($deletable) {
+	if ($c =~ s/<text>[^<]*<\/text>\s*/<deleted>$reason<\/deleted>\n<deleted_by>$SESSION_ID\@$ip<\/deleted_by>\n/s) {
+	  if ($c =~ /<hash>([^<]*)<\/hash>\s*/) {
+	    my $h1 = (length($1) >= 2)? substr($1, 0, 2) : "";
+	    $c = $` . "<hash>$h1$hash</hash>\n" . $';
+	  }
+	  $success = 1;
+	}
       }
     }
     $s .= $c;
@@ -454,7 +473,7 @@ $recaptcha_script
 <!-- [<a href="$PROGRAM?cmd=log">リロード</a>] -->
 </p>
 <p class="alert">※ここにはたくさんのフィクション・自作自演が含まれてます。<br/>
-※無用な削除はおやめください。
+※${DELETABLE_HOUR}時間待てば誰でも削除できます。無用な削除・連投はおやめください。
 </p>
 EOT
 
@@ -477,6 +496,9 @@ EOT
 
     if (defined $text) {
       $text = escape_html($text);
+      my $deldisabled = ($SESSION_ID eq $session_id
+			 || check_deletable_date($time))?
+			   "" : " disabled";
 
       print <<"EOT";
 <div class="memo" id="$memo_id">
@@ -494,7 +516,7 @@ EOT
 <option value="rewrite">修正したから・書き直したから</option>
 <option value="other">その他の理由で</option>
 </select>
-<input type="submit" id="button-$id" value="削除" />
+<input type="submit" id="button-$id" value="削除" $deldisabled />
 </div>
 <div id="captcha-$id" class="captcha delete-captcha"></div>
 <input type="hidden" name="cmd" value="delete" />
@@ -570,6 +592,9 @@ sub print_page {
   if ($rows !~ /^[01-9]+$/s) {
     $rows = $DEFAULT_ROWS;
   }
+  my $ip = $ENV{REMOTE_ADDR} || 'unknown';
+  my $write_disabled = (@WRITABLE_IP && ! (grep {$_ eq $ip} @WRITABLE_IP))? 1 : 0;
+  my $write_disabled_disabled = ($write_disabled)? " disabled" : "";
   my $recaptcha_script = "";
   $recaptcha_script = "<script type=\"text/javascript\" src=\"https://www.google.com/recaptcha/api.js?render=explicit\" async defer></script>"
     if $USE_RECAPTCHA;
@@ -605,6 +630,7 @@ body { background: transparent; $childcss}
 <script type="text/javascript">
 USE_RECAPTCHA=$USE_RECAPTCHA;
 RECAPTCHA_SITE_KEY="$RECAPTCHA_SITE_KEY";
+WRITE_DISABLED=$write_disabled;
 </script>
 <script type="text/javascript" src="$JS"></script>
 $recaptcha_script
@@ -618,7 +644,7 @@ $recaptcha_script
 <textarea id="txt" name="txt" cols="20" rows="$rows">$memo</textarea>
 <br />
 <span id="char-count">---/$MEMO_MAX</span>
-<input type="submit" id="write" value="書き換え"/>
+<input type="submit" id="write" value="書き換え"$write_disabled_disabled/>
 <input type="hidden" name="cmd" value="write" />
 <a href="$PROGRAM?cmd=log" target="_top">ログ</a>
 </div>
@@ -629,6 +655,17 @@ $hidden
 </body>
 </html>
 EOT
+}
+
+sub check_deletable_date {
+  my ($date) = @_;
+  return 1 if ! defined $date || ! $date;
+  my $sig = $SIG{__DIE__};
+  delete $SIG{__DIE__};
+  my $dt1 = eval {Time::Piece->strptime($date, '%Y-%m-%dT%H:%M:%SZ')};
+  $SIG{__DIE__} = $sig;
+  return 1 if $@ || ! defined $dt1;
+  return $DATETIME_PIECE >= $dt1 + $DELETABLE_HOUR * 60 * 60;
 }
 
 sub check_session_date {
@@ -661,6 +698,11 @@ sub main {
 
   my $cmd = $CGI->param('cmd') || 'read';
   if ($cmd eq 'write') {
+    my $ip = $ENV{REMOTE_ADDR} || 'unknown';
+    my $agent = $ENV{HTTP_USER_AGENT} || 'unknown';
+    if (@WRITABLE_IP && ! (grep {$_ eq $ip} @WRITABLE_IP)) {
+      die "Your IP is not allowed to write.";
+    }
     if ($USE_RECAPTCHA) {
       check_recaptcha() or die "reCAPTCHA was failed.";
     }
@@ -670,8 +712,6 @@ sub main {
     }
     my $magic = memo_write($txt);
     print_page($txt);
-    my $ip = $ENV{REMOTE_ADDR} || 'unknown';
-    my $agent = $ENV{HTTP_USER_AGENT} || 'unknown';
     log_append("$DATETIME write $magic $ip $agent\n");
   } elsif ($cmd eq 'delete') {
     if ($USE_RECAPTCHA) {

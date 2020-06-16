@@ -1,7 +1,7 @@
 //
 // shared_memo.js
 //
-var VERSION_shared_memo = "0.0.4"; // Time-stamp: <2020-05-27T12:44:38Z>
+var VERSION_shared_memo = "0.0.6"; // Time-stamp: <2020-06-14T13:56:02Z>
 
 //
 // Author:
@@ -64,7 +64,9 @@ function limit_char() {
     b.disabled = true;
   } else {
     c.style.color = "gray";
-    b.disabled = false;
+    if (! WRITE_DISABLED) {
+      b.disabled = false;
+    }
   }
 }
 

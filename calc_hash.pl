@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-our $VERSION = "0.0.5"; # Time-stamp: <2020-06-09T06:09:15Z>";
+our $VERSION = "0.0.6"; # Time-stamp: <2020-06-09T17:19:20Z>";
 
 ##
 ## Author:
@@ -142,16 +142,16 @@ sub parse_html {
       if ($p =~ /<span\s+class=\"hash\">([^<]+)/s) {
 	$hash2 = $1;
       }
-      my $h2a = "  ";
+      my $h2a = (length($hash2) >= 6)? substr($hash2, 0, 2) : "  ";
       my $h2b = "    ";
-      my $h2c = $hash2;
+      my $h2c = (length($hash2) >= 4)? substr($hash2, -4) : "    ";
       my $n = "  ";
       my $ok = "   ";
       my $ip = "   ";
       # $n = " n" if $h1a ne $h2a;
       # $ok = " ok" if $h1b eq $h2b;
       $ip = " ip" if defined $IP && $h1c eq $h2c;
-      print "      $h1c$n$ok$ip\n";
+      print "$h2a    $h1c$n$ok$ip\n";
     } else {
       my $h1a = substr($hash, 0, 2);
       my $h1b = substr($hash, 2, 4);
@@ -160,7 +160,7 @@ sub parse_html {
       if ($p =~ /<span\s+class=\"hash\">([^<]+)/s) {
 	$hash2 = $1;
       }
-      my $h2a = (length($hash2) >= 2)? substr($hash2, 0, 2) : " ";
+      my $h2a = (length($hash2) >= 2)? substr($hash2, 0, 2) : "  ";
       my $h2b = (length($hash2) >= 6)? substr($hash2, 2, 4) : "    ";
       my $h2c = (length($hash2) >= 10)? substr($hash2, 6) : "    ";
       my $n = "  ";

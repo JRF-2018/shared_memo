@@ -1,5 +1,5 @@
 @charset "utf-8";
-/* Version: 0.0.5; Time-stamp: <2020-06-09T06:05:45Z> */
+/* Version: 0.0.6; Time-stamp: <2020-06-10T12:40:55Z> */
 
 /*
    Author:
@@ -85,6 +85,11 @@ textarea {
 }
 
 .info span {
+   font-family: Consolas, "Courier New", Courier, Monaco,
+      monospace, serif;
+}
+
+pre.result {
    font-family: Consolas, "Courier New", Courier, Monaco,
       monospace, serif;
 }
