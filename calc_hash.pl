@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-our $VERSION = "0.0.6"; # Time-stamp: <2020-06-09T17:19:20Z>";
+our $VERSION = "0.0.7"; # Time-stamp: <2020-06-23T18:58:25Z>";
 
 ##
 ## Author:
@@ -71,6 +71,16 @@ if (! defined $DATETIME && ! $PARSE_HTML) {
 
 usage(1) if @ARGV > 1;
 
+sub escape_html {
+  my ($s) = @_;
+  $s =~ s/\&/\&amp\;/sg;
+  $s =~ s/</\&lt\;/sg;
+  $s =~ s/>/\&gt\;/sg;
+#  $s =~ s/\'/\&apos\;/sg;
+  $s =~ s/\"/\&quot\;/sg;
+  return $s;
+}
+
 sub unescape_html {
   my ($s) = @_;
   $s =~ s/\&quot\;/\"/sg;
@@ -79,6 +89,24 @@ sub unescape_html {
   $s =~ s/\&lt\;/</sg;
   $s =~ s/\&amp\;/\&/sg;
   return $s;
+}
+
+sub check_version_type {
+  my ($s) = @_;
+  return $s =~ /^(?:\d+\.)*\d+$/s;
+}
+
+sub version_compare {
+  my ($a, $b) = @_;
+  my @a = split(/\./, $a);
+  my @b = split(/\./, $b);
+  while (@a < @b) {push(@a, "0")}
+  while (@b < @a) {push(@b, "0")}
+  for (my $i = 0; $i < @a; $i++) {
+    my $x = int($a[$i]) - int($b[$i]);
+    return $x if $x != 0;
+  }
+  return 0;
 }
 
 sub read_key {
@@ -120,7 +148,27 @@ sub get_hash {
 sub parse_html {
   my ($s) = @_;
 
+  $s =~ s/\x0d\x0a/\x0a/sg;
+
+  read_key() if ! defined $KEY;
+  my $hmac = Digest::HMAC_SHA1->new($KEY);
+
+  my $SUM_HASH;
+  my $N;
+  my $DELS;
+  my $hash_version;
+
+  if ($s =~ /<p class=\"sum-hash\">Sum Hash: ([^: ]+):([^ ]+) \((\d+)個中(\d+)個削除\)/) {
+    $hash_version = $1;
+    $SUM_HASH = $2;
+    $N = $3;
+    $DELS = $4;
+  }
+
+  my $memos = 0;
+  my $dels = 0;
   while ($s =~ /<pre( [^>]*)?>([^<]*)/s) {
+    $memos++;
     my $p = $`;
     $s = $';
     my $text = unescape_html($2);
@@ -135,12 +183,14 @@ sub parse_html {
     }
     my $hash = get_hash($datetime . $text, $datetime . ($IP || ""));
     if ($deleted) {
+      $dels ++;
       my $h1a = substr($hash, 0, 2);
       my $h1b = substr($hash, 2, 4);
       my $h1c = substr($hash, 6);
       my $hash2 = "          ";
       if ($p =~ /<span\s+class=\"hash\">([^<]+)/s) {
 	$hash2 = $1;
+	$hmac->add($datetime . $1);
       }
       my $h2a = (length($hash2) >= 6)? substr($hash2, 0, 2) : "  ";
       my $h2b = "    ";
@@ -159,6 +209,7 @@ sub parse_html {
       my $hash2 = "          ";
       if ($p =~ /<span\s+class=\"hash\">([^<]+)/s) {
 	$hash2 = $1;
+	$hmac->add($datetime . encode('UTF-8', escape_html($text)) . $1);
       }
       my $h2a = (length($hash2) >= 2)? substr($hash2, 0, 2) : "  ";
       my $h2b = (length($hash2) >= 6)? substr($hash2, 2, 4) : "    ";
@@ -170,6 +221,15 @@ sub parse_html {
       $ok = " ok" if $h1b eq $h2b;
       $ip = " ip" if defined $IP && $h1c eq $h2c;
       print "$hash$n$ok$ip\n";
+    }
+  }
+
+  if (defined $SUM_HASH && ! $NO_KEY) {
+    my $sum_hash = substr($hmac->b64digest, 0, 16);
+    if ($SUM_HASH eq $sum_hash && $memos == $N && $DELS == $dels) {
+      print "Sum Hash is ok.\n";
+    } else {
+      print "Sum Hash is not ok.\n";
     }
   }
 }

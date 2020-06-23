@@ -1,5 +1,5 @@
 @charset "utf-8";
-/* Version: 0.0.6; Time-stamp: <2020-06-10T12:40:55Z> */
+/* Version: 0.0.7; Time-stamp: <2020-06-20T13:16:37Z> */
 
 /*
    Author:
@@ -111,9 +111,52 @@ span.datetime a:hover {
    color: gray;
 }
 
+.sum-hash {
+   display: none;
+}
+
 .your-ip {
    text-align: right;
    font-size: x-small;
+}
+
+#log-container {
+   margin-bottom: 50px;
+}
+
+#page-top {
+   width: 40px;
+   height: 40px;
+   position: fixed;
+   right: 5px;
+   bottom: 5px;
+   background: skyblue;
+   opacity: 0.4;
+   border-radius: 50%;
+}
+
+#page-top a {
+   position: relative;
+   display: block;
+   widht: 40px;
+   height: 40px;
+   text-decoration: none;
+}
+
+#page-top a::after {
+   content: '▲';
+   font-family: sans-serif;
+   font-weight: bold;
+   font-size: 20px;
+   color: white;
+   opacity: 0.8;
+   position: absolute;
+   top: 5px;
+   bottom: 0;
+   right: 0;
+   left: 0;
+   margin: auto;
+   text-align: center;
 }
 
 /* フォント設定は↓を参考にしました。
@@ -136,7 +179,7 @@ textarea, pre {
   line-height: 1.1;
   font-family: '梅Pゴシック',Textar,'ＭＳ Ｐゴシック','MS PGothic',sans-serif;
   white-space: pre-wrap;
-  word-wrap: normal;
+  word-wrap: break-word;
 }
 /* https://www.ryadel.com/en/css3-media-query-target-only-ie-ie6-ie11-firefox-chrome-safari-edge/
    https://jeffclayton.wordpress.com/2015/02/01/css-os-platform-specific-hacks/

@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-our $VERSION = "0.0.6"; # Time-stamp: <2020-06-14T13:58:23Z>";
+our $VERSION = "0.0.7"; # Time-stamp: <2020-06-23T18:43:37Z>";
 
 ##
 ## Author:
@@ -57,6 +57,7 @@ our $LOG_MAX = 30000000;
 our $LOG_TRUNCATE = 2000000;
 our $COOKIE_NAME = "shared_memo_cgi__session_id";
 our $COOKIE_PATH = "/";
+our $HASH_VERSION = "0.0.7.1";
 
 our $USE_RECAPTCHA = 0;
 our $RECAPTCHA_API = "https://www.google.com/recaptcha/api/siteverify";
@@ -67,7 +68,7 @@ our $DATETIME = datetime();
 our $DATETIME_PIECE = Time::Piece->strptime($DATETIME, '%Y-%m-%dT%H:%M:%SZ');
 our $KEY;
 our $SESSION_ID;
-our $SESSION_DATE;
+our $SUM_HASH;
 
 our $CGI = CGI->new;
 binmode(STDOUT, ":utf8");
@@ -265,6 +266,13 @@ sub memo_read_all {
   flock($fh, LOCK_UN);
   close($fh);
   my @memo;
+  if ($s =~ /<\/top_info>\s*/s) {
+    my $c = $` . $&;
+    $s = $';
+    if ($c =~ /<sum_hash>([^<]+)<\/sum_hash>\s*/s) {
+      $SUM_HASH = $1;
+    }
+  }
   while ($s =~ /<\/memo>\s+/) {
     my $c = $` . $&;
     $s = $';
@@ -278,10 +286,12 @@ sub memo_write {
   my ($text) = @_;
   $text =~ s/\x0d\x0a/\x0a/sg;
 
+
   my $time = $DATETIME;
   my $ip = $ENV{REMOTE_ADDR} || '';
   my $magic = allot_magic();
   my $hash = get_hash($time . $text, $time . $ip);
+  my $hmac = Digest::HMAC_SHA1->new($KEY);
   my $file = $MEMO_XML;
   sysopen(my $fh, $file, O_RDWR | O_CREAT)
     or die "Cannot open $file: $!";
@@ -291,6 +301,7 @@ sub memo_write {
   my $s = decode('UTF-8', join("", <$fh>));
   my @memo;
   $text = escape_html($text);
+  $hmac->add($time . encode('UTF-8', $text) . $hash);
   push(@memo, "<memo>\n<ip>$ip</ip>\n"
        . "<time>$time</time>\n"
        . "<magic>$magic</magic>\n"
@@ -301,6 +312,20 @@ sub memo_write {
     my $c = $` . $&;
     $s = $';
     push(@memo, $c);
+    my $dt;
+    if ($c =~ /<time>([^<]*)<\/time>/) {
+      $dt = $1;
+    }
+    my $text = "";
+    if ($c =~ /<text>([^<]*)<\/text>/s) {
+      $text = $1;
+      $text =~ s/\x0d\x0a/\x0a/sg; # for old memo.
+    }
+    my $hash = "";
+    if ($c =~ /<hash>([^<]*)<\/hash>/s) {
+      $hash = $1;
+    }
+    $hmac->add($dt . encode('UTF-8', $text) . $hash);
   }
   $s = "";
   my $i = 0;
@@ -308,6 +333,11 @@ sub memo_write {
     $s .= $c;
     last if ++$i >= $MEMO_NUM;
   }
+  $SUM_HASH = substr($hmac->b64digest, 0, 16);
+  $s = "<top_info>\n"
+    . "<sum_hash>$SUM_HASH</sum_hash>\n"
+    . "</top_info>\n" . $s;
+
   seek($fh, 0, SEEK_SET)
     or die "Cannot seek $file: $!";
   print $fh encode('UTF-8', $s)
@@ -324,6 +354,7 @@ sub memo_delete {
   my ($reason, $time, $magic) = @_;
   my $ip = $ENV{REMOTE_ADDR} || "";
   my $hash = substr(get_hash($time . $reason, $time . $ip), 6);
+  my $hmac = Digest::HMAC_SHA1->new($KEY);
 
   my $file = $MEMO_XML;
   sysopen(my $fh, $file, O_RDWR | O_CREAT)
@@ -363,9 +394,27 @@ sub memo_delete {
 	}
       }
     }
+    my $dt;
+    if ($c =~ /<time>([^<]*)<\/time>/) {
+      $dt = $1;
+    }
+    my $text = "";
+    if ($c =~ /<text>([^<]*)<\/text>/s) {
+      $text = $1;
+      $text =~ s/\x0d\x0a/\x0a/sg; # for old memo.
+    }
+    my $hash = "";
+    if ($c =~ /<hash>([^<]*)<\/hash>/s) {
+      $hash = $1;
+    }
+    $hmac->add($dt . encode('UTF-8', $text) . $hash);
     $s .= $c;
     last if ++$i >= $MEMO_NUM;
   }
+  $SUM_HASH = substr($hmac->b64digest, 0, 16);
+  $s = "<top_info>\n"
+    . "<sum_hash>$SUM_HASH</sum_hash>\n"
+    . "</top_info>\n" . $s;
   seek($fh, 0, SEEK_SET)
     or die "Cannot seek $file: $!";
   print $fh encode('UTF-8', $s)
@@ -480,6 +529,7 @@ EOT
   print "<p class=\"nolog\">まだログはありません。</p>\n" if ! @memo;
 
   my $id = 0;
+  my $dels = 0;
   foreach my $x (@memo) {
     $id++;
     my $ip = $x->{ip};
@@ -527,6 +577,7 @@ EOT
 </div>
 EOT
     } else {
+      $dels++;
       my $deleted = $x->{deleted};
       my $deleted_by = $x->{deleted_by} || "";
       my $delses = $deleted_by;
@@ -568,12 +619,17 @@ EOT
     my $x = $memo[-1];
     my $time = $x->{time};
     print <<"EOT";
+<div class="post-info">
 <p class="last">$time より前のものは残っていません。</p>
 EOT
   }
   my $your_ip = $ENV{REMOTE_ADDR} || "不明";
+  my $sum_hash = $SUM_HASH || "";
   print <<"EOT";
+<p class="sum-hash">Sum Hash: $HASH_VERSION:$sum_hash (${id}個中${dels}個削除)</p>
 <p class="your-ip">■ あなたは $DATETIME に IPアドレス $your_ip からアクセスしています。</p>
+</div>
+<div id="page-top"><a href="#"></a></div>
 </div>
 </body>
 </html>
