@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-our $VERSION = "0.0.7"; # Time-stamp: <2020-06-23T18:43:37Z>";
+our $VERSION = "0.0.8"; # Time-stamp: <2020-06-29T21:25:46Z>";
 
 ##
 ## Author:
@@ -43,6 +43,8 @@ our $TITLE = "グローバル共有メモ"; ## or "街角白板１号"
 our $DEFAULT_ROWS = 8;
 our $DELETABLE_HOUR = 18;
 our @WRITABLE_IP = ();
+our @HIDE_IP_IP = ();
+our @DISABLE_SIGN_IP = ();
 our $MEMO_XML = "shared_memo.xml";
 our $LOG = "shared_memo.log";
 our $JS = "shared_memo.js";
@@ -53,11 +55,12 @@ our $PROGRAM = "shared_memo.cgi";
 our $KEY_FILE = "shared_memo_key.xml";
 our $MEMO_MAX = 2000;
 our $MEMO_NUM = 200;
-our $LOG_MAX = 30000000;
-our $LOG_TRUNCATE = 2000000;
-our $COOKIE_NAME = "shared_memo_cgi__session_id";
+our $LOG_MAX = 10000000;
+our $LOG_TRUNCATE = 7000000;
+our $COOKIE_SID = "shared_memo_cgi__session_id";
+our $COOKIE_NICKNAME = "shared_memo_cgi__nickname";
 our $COOKIE_PATH = "/";
-our $HASH_VERSION = "0.0.7.1";
+our $HASH_VERSION = "0.0.8.3";
 
 our $USE_RECAPTCHA = 0;
 our $RECAPTCHA_API = "https://www.google.com/recaptcha/api/siteverify";
@@ -66,7 +69,9 @@ our $RECAPTCHA_SITE_KEY = "__Your_Site_Key__";
 
 our $DATETIME = datetime();
 our $DATETIME_PIECE = Time::Piece->strptime($DATETIME, '%Y-%m-%dT%H:%M:%SZ');
+our $REMOTE_ADDR = remote_addr();
 our $KEY;
+our $NICKNAME;
 our $SESSION_ID;
 our $SUM_HASH;
 
@@ -98,6 +103,20 @@ sub datetime { # ISO 8601 extended format.
   $mon ++;
   return sprintf("%d-%02d-%02dT%02d:%02d:%02dZ",
 		 $year, $mon, $mday, $hour, $min, $sec);
+}
+
+sub remote_addr {
+  my $r;
+  $r = $ENV{REMOTE_ADDR} if exists $ENV{REMOTE_ADDR};
+  $r = ($r || '') . "($ENV{HTTP_X_FORWARDED_FOR})"
+    if exists $ENV{HTTP_X_FORWARDED_FOR};
+  $r = ($r || '') . "($ENV{HTTP_CLIENT_IP})"
+    if exists $ENV{HTTP_CLIENT_IP};
+  if (defined $r) {
+    $r =~ s/[\s\&\"<>]/_/sg;
+    $r = substr($r, 0, 128) if length($r) > 128;
+  }
+  return $r;
 }
 
 sub allot_magic {
@@ -288,7 +307,7 @@ sub memo_write {
 
 
   my $time = $DATETIME;
-  my $ip = $ENV{REMOTE_ADDR} || '';
+  my $ip = $REMOTE_ADDR || '';
   my $magic = allot_magic();
   my $hash = get_hash($time . $text, $time . $ip);
   my $hmac = Digest::HMAC_SHA1->new($KEY);
@@ -352,7 +371,7 @@ sub memo_write {
 
 sub memo_delete {
   my ($reason, $time, $magic) = @_;
-  my $ip = $ENV{REMOTE_ADDR} || "";
+  my $ip = $REMOTE_ADDR || "";
   my $hash = substr(get_hash($time . $reason, $time . $ip), 6);
   my $hmac = Digest::HMAC_SHA1->new($KEY);
 
@@ -481,27 +500,39 @@ sub check_recaptcha {
 }
 
 sub print_log_page {
-  my (@memo) = @_;
+  my ($memo_array, %opt) = @_;
+  my @memo = @{$memo_array};
+  my $hmac;
+  if (exists $opt{nickname}) {
+    $NICKNAME = $opt{nickname};
+    read_key() if ! defined $KEY;
+    $hmac = Digest::HMAC_SHA1->new($KEY);
+  }
+
   my $recaptcha_script = "";
   $recaptcha_script = "<script type=\"text/javascript\" src=\"https://www.google.com/recaptcha/api.js?render=explicit\" async defer></script>"
     if $USE_RECAPTCHA;
-  my $this_user = "$SESSION_ID\@" . ($ENV{REMOTE_ADDR} || '');
+  my $this_user = "$SESSION_ID\@" . ($REMOTE_ADDR || '');
 
-  my $ncookie = $CGI->cookie(-name => $COOKIE_NAME,
+  my $scookie = $CGI->cookie(-name => $COOKIE_SID,
 			     -path => $COOKIE_PATH,
 			     -value => $SESSION_ID,
 			     -expires => '+7d');
+  my $ncookie = $CGI->cookie(-name => $COOKIE_NICKNAME,
+			     -path => $COOKIE_PATH,
+			     -value => encode('UTF-8', $NICKNAME),
+			     -expires => '+1y');
 
   print $CGI->header(-type => 'text/html',
 		     -charset => 'utf-8',
-		     -cookie => [$ncookie]);
+		     -cookie => [$scookie, $ncookie]);
   print <<"EOT";
 <!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
 <meta http-equiv="Content-Language" content="ja">
-<meta name="robots" content="noindex,nofollow" />
+<meta name="robots" content="nofollow" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 
 <title>$TITLE: ログ</title>
@@ -513,21 +544,24 @@ USE_RECAPTCHA=$USE_RECAPTCHA;
 RECAPTCHA_SITE_KEY="$RECAPTCHA_SITE_KEY";
 </script>
 <script type="text/javascript" src="$LOG_JS"></script>
-</head>
 $recaptcha_script
+</head>
 <body onLoad="init()">
 <div class="container" id="log-container">
 <img id="qr" src="$LOG_QR"/><h1>$TITLE: ログ</h1>
-<p class="back">[<a href="$PROGRAM">メモに戻る</a>]
-<!-- [<a href="$PROGRAM?cmd=log">リロード</a>] -->
+<p class="back">[<a href="$PROGRAM" rel="nofollow">メモに戻る</a>]
+<!-- [<a href="$PROGRAM?cmd=log" rel="nofollow">リロード</a>] -->
+[<a href="#bottom">末尾</a>]
 </p>
 <p class="alert">※ここにはたくさんのフィクション・自作自演が含まれてます。<br/>
-※${DELETABLE_HOUR}時間待てば誰でも削除できます。無用な削除・連投はおやめください。
+※${DELETABLE_HOUR}時間待てば誰でも削除できます。無用な削除・連投はおやめください。<br/>
+※ログ署名で確証できるメモの著者は十分な補償のないメモの再配布を禁止できるとします。
 </p>
 EOT
 
   print "<p class=\"nolog\">まだログはありません。</p>\n" if ! @memo;
 
+  my $wrote = 0;
   my $id = 0;
   my $dels = 0;
   foreach my $x (@memo) {
@@ -541,6 +575,8 @@ EOT
     my $etime = escape($time);
     my $text = $x->{text};
     my $ipmark = ($SESSION_ID eq $session_id)? "●" : "○";
+    $wrote = 1 if $SESSION_ID eq $session_id;
+    my $delmark = "";
     my $memo_id = "memo_${time}_$magic";
     $memo_id =~ s/[\:\-]//g;
 
@@ -556,7 +592,7 @@ EOT
  onSubmit="return checkSubmit($id)">
 <div class="info">
 <span class="ipmark">$ipmark</span>
-<span class="datetime"><a href="$PROGRAM?cmd=log#$memo_id">$time</a></span>
+<span class="datetime"><a href="$PROGRAM?cmd=log#$memo_id" rel="nofollow">$time</a></span>
 <span class="hash">$hash</span>
 <select id="select-$id" name="reason" onChange="selectReason($id)">
 <option value="none" selected>削除理由を選んでください</option>
@@ -584,6 +620,7 @@ EOT
       $delses =~ s/\@.*$//s;
       my $class = ($SESSION_ID eq $delses)? " deleted-by-me"
 	: " deleted-by-other";
+      $delmark = ($SESSION_ID eq $delses)? "●" : "○";
       if (defined $deleted) {
 	my %reason = ('other' => 'その他の理由で',
 		      'rewrite' => '修正したから・書き直したから',
@@ -614,6 +651,8 @@ EOT
 </div>
 EOT
     }
+    $hmac->add($time . encode('UTF-8', $ipmark . $delmark))
+      if defined $hmac;
   }
   if (@memo) {
     my $x = $memo[-1];
@@ -623,13 +662,66 @@ EOT
 <p class="last">$time より前のものは残っていません。</p>
 EOT
   }
-  my $your_ip = $ENV{REMOTE_ADDR} || "不明";
-  my $sum_hash = $SUM_HASH || "";
+  my $you = "あなた";
+  my $your_ip = $REMOTE_ADDR || "不明";
+  my $sum_hash = $opt{sum_hash} || "";
+  my $need_ip = ! grep {$REMOTE_ADDR eq $_} @HIDE_IP_IP;
+  $need_ip = $opt{need_ip} if exists $opt{need_ip};
+  if (defined $hmac) {
+    if ($need_ip) {
+      $hmac->add(encode('UTF-8',
+			"datetime: $DATETIME"
+			. " person: 署名者"
+			. " nickname: $NICKNAME"
+			. " ip: $your_ip"
+			. " sum_hash: $sum_hash"));
+    } else {
+      $hmac->add(encode('UTF-8',
+			"datetime: $DATETIME"
+			. " person: 署名者"
+			. " nickname: $NICKNAME"
+			. " sum_hash: $sum_hash"));
+    }
+
+    my $sign_hash = substr($hmac->b64digest, 0, 20);
+    my $nickname = escape_html($NICKNAME);
+    $you = "署名者";
+    print <<"EOT";
+<p class="signed-by">ログ署名者: ${nickname}</p>
+<p class="sign-hash">Sign Hash: $sign_hash</p>
+EOT
+  } elsif ($wrote && ! grep {$REMOTE_ADDR eq $_} @DISABLE_SIGN_IP) {
+    my $nickname = escape_html($NICKNAME);
+    print <<"EOT";
+<form id="sign-form" action="$PROGRAM" method="post"
+ onSubmit="return checkSignSubmit()">
+<div class="sign-div">
+<label>名前:<input type="text" name="nickname" id="nickname" value="$nickname" size="8"/></label>
+<label><input type="checkbox" name="need_ip" id="need_ip" value="1" checked/>IP有</label>
+<label><input type="checkbox" name="public" id="public" value="1" checked/>公表</label>
+<input type="submit" id="sign-button" value="ログ署名" />
+</div>
+<div id="captcha-sign" class="captcha sign-captcha"></div>
+<input type="hidden" name="cmd" value="slog" />
+</form>
+EOT
+  }
   print <<"EOT";
 <p class="sum-hash">Sum Hash: $HASH_VERSION:$sum_hash (${id}個中${dels}個削除)</p>
-<p class="your-ip">■ あなたは $DATETIME に IPアドレス $your_ip からアクセスしています。</p>
+EOT
+  if ($need_ip) {
+    print <<"EOT";
+<p class="your-ip">■ ${you}は $DATETIME に IPアドレス $your_ip からアクセスしています。</p>
+EOT
+  } else {
+    print <<"EOT";
+<p class="your-ip">■ ${you}は $DATETIME にアクセスしています。</p>
+EOT
+  }
+  print <<"EOT"
 </div>
 <div id="page-top"><a href="#"></a></div>
+<div id="bottom"></div>
 </div>
 </body>
 </html>
@@ -648,7 +740,7 @@ sub print_page {
   if ($rows !~ /^[01-9]+$/s) {
     $rows = $DEFAULT_ROWS;
   }
-  my $ip = $ENV{REMOTE_ADDR} || 'unknown';
+  my $ip = $REMOTE_ADDR || 'unknown';
   my $write_disabled = (@WRITABLE_IP && ! (grep {$_ eq $ip} @WRITABLE_IP))? 1 : 0;
   my $write_disabled_disabled = ($write_disabled)? " disabled" : "";
   my $recaptcha_script = "";
@@ -659,14 +751,18 @@ sub print_page {
   $hidden .= "<input type=\"hidden\" name=\"child\" value=\"$child\" />\n"
     if $child;
 
-  my $ncookie = $CGI->cookie(-name => $COOKIE_NAME,
+  my $scookie = $CGI->cookie(-name => $COOKIE_SID,
 			     -path => $COOKIE_PATH,
 			     -value => $SESSION_ID,
 			     -expires => '+7d');
+  my $ncookie = $CGI->cookie(-name => $COOKIE_NICKNAME,
+			     -path => $COOKIE_PATH,
+			     -value => encode('UTF-8', $NICKNAME),
+			     -expires => '+1y');
 
   print $CGI->header(-type => 'text/html',
 		     -charset => 'utf-8',
-		     -cookie => [$ncookie]);
+		     -cookie => [$scookie, $ncookie]);
   print <<"EOT";
 <!DOCTYPE html>
 <html lang="ja">
@@ -743,7 +839,7 @@ sub check_session_date {
 sub main {
   gen_key() if ! -f $KEY_FILE;
 
-  $SESSION_ID = $CGI->cookie($COOKIE_NAME);
+  $SESSION_ID = $CGI->cookie($COOKIE_SID);
   if (defined $SESSION_ID
       && $SESSION_ID =~ /^[A-Fa-f01-9]{32}\:(\d+-\d\d-\d\dT\d\d:\d\d:\d\dZ)$/s
       && check_session_date($1)) {
@@ -751,16 +847,20 @@ sub main {
   } else {
     $SESSION_ID = new_session_id();
   }
+  $NICKNAME = decode('UTF-8', $CGI->cookie($COOKIE_NICKNAME) || "");
+  if (length($NICKNAME) > 128) {
+    $NICKNAME = substr($NICKNAME, 0, 128);
+  }
 
   my $cmd = $CGI->param('cmd') || 'read';
   if ($cmd eq 'write') {
-    my $ip = $ENV{REMOTE_ADDR} || 'unknown';
+    my $ip = $REMOTE_ADDR || 'unknown';
     my $agent = $ENV{HTTP_USER_AGENT} || 'unknown';
     if (@WRITABLE_IP && ! (grep {$_ eq $ip} @WRITABLE_IP)) {
       die "Your IP is not allowed to write.";
     }
     if ($USE_RECAPTCHA) {
-      check_recaptcha() or die "reCAPTCHA was failed.";
+      check_recaptcha() or die "reCAPTCHA failed.";
     }
     my $txt = decode('UTF-8', $CGI->param('txt') || "");
     if (length($txt) > $MEMO_MAX) {
@@ -768,10 +868,10 @@ sub main {
     }
     my $magic = memo_write($txt);
     print_page($txt);
-    log_append("$DATETIME write $magic $ip $agent\n");
+    log_append("$DATETIME write ($SESSION_ID) $magic $ip $agent\n");
   } elsif ($cmd eq 'delete') {
     if ($USE_RECAPTCHA) {
-      check_recaptcha() or die "reCAPTCHA was failed.";
+      check_recaptcha() or die "reCAPTCHA failed.";
     }
     my $reason = decode('UTF-8', $CGI->param('reason') || "none");
     if (length($reason) > 64 || $reason !~ /^[01-9A-Za-z_]+$/s) {
@@ -780,16 +880,35 @@ sub main {
     my $time = decode('UTF-8', $CGI->param('time') || "");
     my $magic = decode('UTF-8', $CGI->param('magic') || "");
     if ($reason eq "none") {
-      print_log_page(memo_read_all());
+      print_log_page([memo_read_all()], sum_hash => $SUM_HASH);
     } else {
       my ($success, @r) = memo_delete($reason, $time, $magic);
-      print_log_page(@r);
-      my $ip = $ENV{REMOTE_ADDR} || 'unknown';
+      print_log_page([@r], sum_hash => $SUM_HASH);
+      my $ip = $REMOTE_ADDR || 'unknown';
       my $agent = $ENV{HTTP_USER_AGENT} || 'unknown';
-      log_append("$DATETIME delete $time $magic $ip $agent\n") if $success;
+      log_append("$DATETIME delete ($SESSION_ID) $time $magic $ip $agent\n") if $success;
     }
   } elsif ($cmd eq 'log') {
-    print_log_page(memo_read_all());
+    print_log_page([memo_read_all()], sum_hash => $SUM_HASH);
+  } elsif ($cmd eq 'slog') {
+    if ($USE_RECAPTCHA) {
+      check_recaptcha() or die "reCAPTCHA failed.";
+    }
+    my $need_ip = !! ($CGI->param('need_ip') || 0);
+    my $nickname = decode('UTF-8', $CGI->param('nickname') || "");
+    if (length($nickname) >= 128) {
+      $nickname = substr($nickname, 0, 128);
+    }
+    $nickname =~ s/\x0d\x0a/\x0a/sg;
+    $nickname =~ s/[\x0d\x0a]/ /sg;
+    print_log_page([memo_read_all()], sum_hash => $SUM_HASH,
+		   nickname => $nickname, need_ip => $need_ip);
+    my $ip = $REMOTE_ADDR || 'unknown';
+    my $agent = $ENV{HTTP_USER_AGENT} || 'unknown';
+    $nickname = escape_html($nickname);
+    my $closed = "";
+    $closed = "c" if ! $CGI->param('public');
+    log_append("$DATETIME slog ($SESSION_ID) $closed\"$nickname\" $ip $agent\n");
   } else {
     my $txt = memo_read();
     print_page($txt);

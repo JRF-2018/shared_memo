@@ -1,7 +1,7 @@
 //
 // shared_memo_widget.js
 //
-var VERSION_shared_memo_widget = "0.0.2"; // Time-stamp: <2020-05-18T10:18:36Z>
+var VERSION_shared_memo_widget = "0.0.8"; // Time-stamp: <2020-06-27T23:19:17Z>
 
 //
 // Author:
@@ -30,10 +30,8 @@ var VERSION_shared_memo_widget = "0.0.2"; // Time-stamp: <2020-05-18T10:18:36Z>
 
 
 (function () {
-  var CGI = "http://jrockford.s1010.xrea.com/demo/shared_memo.cgi";
+  var CGI;
 
-  var origin = CGI.replace(/^(https?:\/\/[^\/]+)\/.*/, "$1");
-  
   var auto_width = 1;
   var auto_height = 1;
   var width = 200;
@@ -41,6 +39,18 @@ var VERSION_shared_memo_widget = "0.0.2"; // Time-stamp: <2020-05-18T10:18:36Z>
   var height = 250;
   var id;
   var i = 0;
+
+  var current;
+  if (document.currentScript) {
+    current = document.currentScript.src;
+  } else {
+    var scripts = document.getElementsByTagName('script');
+    current = scripts[scripts.length - 1].src;
+  }
+  if (! CGI) {
+    CGI = current.replace(/\/[^\/]+$/, "/shared_memo.cgi");
+  }
+  var origin = CGI.replace(/^(https?:\/\/[^\/]+)\/.*/, "$1");
 
   while (1) {
     if (! document.getElementById("shared_memo_widget_" + i)) {

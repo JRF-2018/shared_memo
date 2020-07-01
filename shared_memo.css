@@ -1,5 +1,5 @@
 @charset "utf-8";
-/* Version: 0.0.7; Time-stamp: <2020-06-20T13:16:37Z> */
+/* Version: 0.0.8; Time-stamp: <2020-06-25T10:38:16Z> */
 
 /*
    Author:
@@ -118,6 +118,20 @@ span.datetime a:hover {
 .your-ip {
    text-align: right;
    font-size: x-small;
+}
+
+.signed-by {
+   text-align: right;
+   padding-right: 1em;
+   font-size: small;
+}
+
+.sign-div {
+   font-size: small;
+}
+
+.sign-hash {
+   display: none;
 }
 
 #log-container {
