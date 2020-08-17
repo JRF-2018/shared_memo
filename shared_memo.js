@@ -1,7 +1,7 @@
 //
 // shared_memo.js
 //
-var VERSION_shared_memo = "0.0.6"; // Time-stamp: <2020-06-14T13:56:02Z>
+var VERSION_shared_memo = "0.0.9"; // Time-stamp: <2020-08-10T17:11:38Z>
 
 //
 // Author:
@@ -29,6 +29,7 @@ var VERSION_shared_memo = "0.0.6"; // Time-stamp: <2020-06-14T13:56:02Z>
 //
 
 var MEMO_MAX = 2000;
+var MEMO_MAX_LINE = 100;
 var CLIENT_HEIGHT = 0;
 var IFRAME_ID;
 
@@ -57,9 +58,11 @@ function limit_char() {
   var t = document.getElementById('txt');
   var c = document.getElementById('char-count');
   var b = document.getElementById('write');
-  l = t.value.length;
+  var l = t.value.length;
+  var ln = t.value.match(/\n/g);
+  ln = ((ln)? ln.length : 0) + ((t.value.match(/\n$/))? 0 : 1);
   c.innerHTML = l + "/" + MEMO_MAX;
-  if (l > MEMO_MAX) {
+  if (l > MEMO_MAX || ln > MEMO_MAX_LINE) {
     c.style.color = "red";
     b.disabled = true;
   } else {

@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-our $VERSION = "0.0.8"; # Time-stamp: <2020-06-29T21:25:46Z>";
+our $VERSION = "0.0.9"; # Time-stamp: <2020-08-10T16:28:51Z>";
 
 ##
 ## Author:
@@ -54,6 +54,7 @@ our $CSS = "shared_memo.css";
 our $PROGRAM = "shared_memo.cgi";
 our $KEY_FILE = "shared_memo_key.xml";
 our $MEMO_MAX = 2000;
+our $MEMO_MAX_LINE = 100;
 our $MEMO_NUM = 200;
 our $LOG_MAX = 10000000;
 our $LOG_TRUNCATE = 7000000;
@@ -866,6 +867,13 @@ sub main {
     if (length($txt) > $MEMO_MAX) {
       $txt = substr($txt, 0, $MEMO_MAX);
     }
+    my $line = 1;
+    my $tmp = "";
+    while ($txt =~ /^(.*)$/mg && $line <= $MEMO_MAX_LINE) {
+      $line++;
+      $tmp .= $1;
+    }
+    $txt = $tmp;
     my $magic = memo_write($txt);
     print_page($txt);
     log_append("$DATETIME write ($SESSION_ID) $magic $ip $agent\n");
