@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-our $VERSION = "0.0.9"; # Time-stamp: <2020-08-10T16:28:51Z>";
+our $VERSION = "0.1.0"; # Time-stamp: <2020-10-23T00:45:16Z>";
 
 ##
 ## Author:
@@ -304,8 +304,6 @@ sub memo_read_all {
 
 sub memo_write {
   my ($text) = @_;
-  $text =~ s/\x0d\x0a/\x0a/sg;
-
 
   my $time = $DATETIME;
   my $ip = $REMOTE_ADDR || '';
@@ -871,9 +869,11 @@ sub main {
     my $tmp = "";
     while ($txt =~ /^(.*)$/mg && $line <= $MEMO_MAX_LINE) {
       $line++;
-      $tmp .= $1;
+      $tmp .= $1 . "\n";
     }
-    $txt = $tmp;
+    $txt = $tmp if length($txt) > length($tmp);
+    $txt =~ s/\x0d\x0a/\x0a/sg;
+    $txt =~ s/\x0d/\x0a/sg;
     my $magic = memo_write($txt);
     print_page($txt);
     log_append("$DATETIME write ($SESSION_ID) $magic $ip $agent\n");
