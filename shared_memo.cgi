@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-our $VERSION = "0.1.0"; # Time-stamp: <2020-10-23T00:45:16Z>";
+our $VERSION = "0.1.1"; # Time-stamp: <2020-12-01T03:48:25Z>";
 
 ##
 ## Author:
@@ -302,6 +302,32 @@ sub memo_read_all {
   return @memo;
 }
 
+sub memo_fix_cr {
+  my ($c) = @_;
+  my $dt;
+  if ($c =~ /<time>([^<]*)<\/time>/) {
+    $dt = $1;
+  }
+  my $text;
+  if ($c =~ /<text>([^<]*)<\/text>/s) {
+    $text = $1;
+  }
+  my $hash;
+  if ($c =~ /<hash>([^<]*)<\/hash>/s) {
+    $hash = $1;
+  }
+  return () if ! defined $text || ! defined $hash || ! defined $dt;
+  my $iphash = substr($hash, 6);
+  $text =~ s/\x0d\x0a/\x0a/sg;
+  $text =~ s/\x0d/\x0a/sg;
+  $hash = get_hash($dt . unescape_html($text), "");
+  $hash = substr($hash, 0, 6) . $iphash;
+  $c =~ s/<hash>([^<]*)<\/hash>/<hash>$hash<\/hash>/s;
+  $c =~ s/<text>([^<]*)<\/text>/<text>$text<\/text>/s;
+
+  return ($c, $text, $hash);
+}
+
 sub memo_write {
   my ($text) = @_;
 
@@ -329,7 +355,9 @@ sub memo_write {
   while ($s =~ /<\/memo>\s+/) {
     my $c = $` . $&;
     $s = $';
-    push(@memo, $c);
+    if ($c =~ /<memo>/) {
+      $c = $& . $';
+    }
     my $dt;
     if ($c =~ /<time>([^<]*)<\/time>/) {
       $dt = $1;
@@ -337,20 +365,21 @@ sub memo_write {
     my $text = "";
     if ($c =~ /<text>([^<]*)<\/text>/s) {
       $text = $1;
-      $text =~ s/\x0d\x0a/\x0a/sg; # for old memo.
     }
     my $hash = "";
     if ($c =~ /<hash>([^<]*)<\/hash>/s) {
       $hash = $1;
     }
+    if ($text =~ /\x0d/s) {
+      my @r = memo_fix_cr($c);
+      ($c, $text, $hash) = @r if @r;
+    }
+
+    push(@memo, $c);
     $hmac->add($dt . encode('UTF-8', $text) . $hash);
+    last if @memo >= $MEMO_NUM;
   }
-  $s = "";
-  my $i = 0;
-  foreach my $c (@memo) {
-    $s .= $c;
-    last if ++$i >= $MEMO_NUM;
-  }
+  $s = join("", @memo);
   $SUM_HASH = substr($hmac->b64digest, 0, 16);
   $s = "<top_info>\n"
     . "<sum_hash>$SUM_HASH</sum_hash>\n"
@@ -385,6 +414,9 @@ sub memo_delete {
   while ($s =~ /<\/memo>\s+/) {
     my $c = $` . $&;
     $s = $';
+    if ($c =~ /<memo>/) {
+      $c = $& . $';
+    }
     push(@memo, $c);
   }
   $s = "";
@@ -419,7 +451,6 @@ sub memo_delete {
     my $text = "";
     if ($c =~ /<text>([^<]*)<\/text>/s) {
       $text = $1;
-      $text =~ s/\x0d\x0a/\x0a/sg; # for old memo.
     }
     my $hash = "";
     if ($c =~ /<hash>([^<]*)<\/hash>/s) {

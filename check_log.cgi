@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-our $VERSION = "0.0.8"; # Time-stamp: <2020-06-29T21:37:06Z>";
+our $VERSION = "0.1.1"; # Time-stamp: <2020-12-01T03:10:25Z>";
 
 ##
 ## Author:
@@ -51,7 +51,8 @@ our $HASH_VERSION = "0.0.8.3";
 our $IP = "";
 our $KEY;
 
-our $CHECK_BEGIN = "2020-05-24T07:39:09Z";
+#our $CHECK_BEGIN = "2020-05-24T07:39:09Z";
+our $CHECK_BEGIN = "2020-10-23T00:00:00Z";
 our $CHECK_BEGIN_TP = Time::Piece->strptime($CHECK_BEGIN, '%Y-%m-%dT%H:%M:%SZ');
 
 our $USE_RECAPTCHA = 0;
@@ -282,11 +283,17 @@ sub parse_html {
   my $easyerr = 0;
   my @marked;
   my %same_date;
-  while ($s =~ /<pre( [^>]*)?>([^<]*)/s) {
+  while ($s =~ /<pre( [^>]*)?>/s) {
     my $p = $`;
-    $s = $';
-    my $text = unescape_html($2);
     my $class = $1 || "";
+    $s = $';
+    if ($s !~ /<\/pre>/s) {
+      die "&lt;/pre&gt; がありません。\n";
+    }
+    $s = $';
+    my $text = $`;
+    $text =~ s/<[^>]+>//g;
+    $text = unescape_html($text);
     next if $class =~ /result/;
     $memos++;
     my $deleted = ($class =~ /deleted/);
@@ -583,7 +590,7 @@ EOT
 sub parse_get_datetime {
   my ($s) = @_;
   my @r;
-  while ($s =~ /<pre( [^>]*)?>([^<]*)/s) {
+  while ($s =~ /<pre( [^>]*)?>/s) {
     my $p = $`;
     $s = $';
     my $class = $1 || "";

@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-our $VERSION = "0.0.8"; # Time-stamp: <2020-06-29T17:23:52Z>";
+our $VERSION = "0.1.1"; # Time-stamp: <2020-11-30T23:04:29Z>";
 
 ##
 ## Author:
@@ -224,12 +224,19 @@ sub parse_html {
 
   my $memos = 0;
   my $dels = 0;
-  while ($s =~ /<pre( [^>]*)?>([^<]*)/s) {
-    $memos++;
+  while ($s =~ /<pre( [^>]*)?>/s) {
     my $p = $`;
-    $s = $';
-    my $text = unescape_html($2);
     my $class = $1 || "";
+    $s = $';
+    if ($s !~ /<\/pre>/s) {
+      die "</pre> がありません。\n";
+    }
+    $s = $';
+    my $text = $`;
+    $text =~ s/<[^>]+>//g;
+    $text = unescape_html($text);
+    next if $class =~ /result/;
+    $memos++;
     my $deleted = ($class =~ /deleted/);
     my $datetime = $DATETIME;
     if (! defined $DATETIME) {
