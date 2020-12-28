@@ -1,7 +1,7 @@
 //
 // shared_memo.js
 //
-var VERSION_shared_memo = "0.0.9"; // Time-stamp: <2020-08-10T17:11:38Z>
+var VERSION_shared_memo = "0.1.2"; // Time-stamp: <2020-12-27T18:26:26Z>
 
 //
 // Author:
@@ -31,6 +31,7 @@ var VERSION_shared_memo = "0.0.9"; // Time-stamp: <2020-08-10T17:11:38Z>
 var MEMO_MAX = 2000;
 var MEMO_MAX_LINE = 100;
 var CLIENT_HEIGHT = 0;
+var ORIG_TEXT = "";
 var IFRAME_ID;
 
 function add_event_listener(obj, ev, func) {
@@ -71,6 +72,11 @@ function limit_char() {
       b.disabled = false;
     }
   }
+  if (ORIG_TEXT == t.value) {
+    b.style.color = "black";
+  } else {
+    b.style.color = "red";
+  }
 }
 
 function verifyCallback(response) {
@@ -97,6 +103,7 @@ function checkSubmit() {
 function init(child) {
   document.getElementById('write').disabled = true;
   var txt = document.getElementById('txt');
+  ORIG_TEXT = txt.value;
   if (txt) {
     setTimeout(limit_char, 500);
     add_event_listener(txt, 'keyup', limit_char);

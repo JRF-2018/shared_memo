@@ -1,7 +1,7 @@
 //
 // shared_memo_log.js
 //
-var VERSION_shared_memo = "0.1.1"; // Time-stamp: <2020-12-02T09:10:43Z>
+var VERSION_shared_memo = "0.1.2"; // Time-stamp: <2020-12-24T14:49:11Z>
 
 //
 // Author:
@@ -135,7 +135,7 @@ function format_url_string(html) {
 
 function format_escape_bracket(s) {
   var html = "";
-  while (s.match(/\[([^\[\]]*)\]/m)) {
+  while (s.match(/\[([^\[\]\<\>]*)\]/m)) {
     var l = RegExp.leftContext;
     s = RegExp.rightContext;
     var c = RegExp.$1;
