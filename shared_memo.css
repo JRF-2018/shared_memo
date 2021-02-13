@@ -1,5 +1,5 @@
 @charset "utf-8";
-/* Version: 0.0.8; Time-stamp: <2020-06-25T10:38:16Z> */
+/* Version: 0.1.3; Time-stamp: <2021-01-31T07:27:29Z> */
 
 /*
    Author:
@@ -152,7 +152,7 @@ span.datetime a:hover {
 #page-top a {
    position: relative;
    display: block;
-   widht: 40px;
+   width: 40px;
    height: 40px;
    text-decoration: none;
 }
@@ -171,6 +171,12 @@ span.datetime a:hover {
    left: 0;
    margin: auto;
    text-align: center;
+}
+
+@media print {
+   #page-top {
+      display: none;
+   }
 }
 
 /* フォント設定は↓を参考にしました。
