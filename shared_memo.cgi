@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-our $VERSION = "0.1.3"; # Time-stamp: <2021-02-13T13:24:50Z>";
+our $VERSION = "0.1.4"; # Time-stamp: <2021-08-18T10:06:35Z>";
 
 ##
 ## Author:
@@ -893,9 +893,6 @@ sub main {
       check_recaptcha() or die "reCAPTCHA failed.";
     }
     my $txt = decode('UTF-8', $CGI->param('txt') || "");
-    if (length($txt) > $MEMO_MAX) {
-      $txt = substr($txt, 0, $MEMO_MAX);
-    }
     my $line = 1;
     my $tmp = "";
     while ($txt =~ /^(.*)$/mg && $line <= $MEMO_MAX_LINE) {
@@ -905,6 +902,9 @@ sub main {
     $txt = $tmp if length($txt) > length($tmp);
     $txt =~ s/\x0d\x0a/\x0a/sg;
     $txt =~ s/\x0d/\x0a/sg;
+    if (length($txt) > $MEMO_MAX) {
+      $txt = substr($txt, 0, $MEMO_MAX);
+    }
     my $magic = memo_write($txt);
     print_page($txt);
     log_append("$DATETIME write ($SESSION_ID) $magic $ip $agent\n");
