@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-our $VERSION = "0.1.1"; # Time-stamp: <2020-12-01T03:10:25Z>";
+our $VERSION = "0.2.0"; # Time-stamp: <2021-12-12T09:53:03Z>";
 
 ##
 ## Author:
@@ -45,6 +45,8 @@ our $JS = "check_log.js";
 our $CSS = "shared_memo.css";
 our $PROGRAM = "check_log.cgi";
 our $KEY_FILE = "shared_memo_key.xml";
+our $KEY_PREFIX = "shared_memo_key-";
+our @KEY_FILES = ($KEY_FILE, glob("${KEY_PREFIX}*.xml"));
 our @DENY_NICKNAME = (); # may be regexp.
 our @ALLOW_DENIED_NICKNAME = (); # may be regexp.
 our $HASH_VERSION = "0.0.8.3";
@@ -473,7 +475,7 @@ EOT
   } elsif ($easyerr) {
     print "NG: 簡易チェックの失敗がありました。文字コード(utf-8)や改行(lf)コードをチェックしてください。特定のものにのみ失敗がある場合は、偽造が疑われます。\n";
   } elsif ($greens < 1) {
-    print "NG: 有効なメモがありません。\n";
+    print "NG: 簡易チェックには成功しましたが、有効なメモがありません。\n";
   } elsif ($sign_error == 1) {
     print "NG: ログ署名の形式が正しくありません。\n";
   } elsif ($SUM_HASH ne $sum_hash || ! $green) {
@@ -668,7 +670,7 @@ sub check_slog {
   my %slog;
   while ($s =~ /^.*$/mg) {
     my $c = $&;
-    if ($c !~ /^([^ ]+) (write|delete|slog) /) {
+    if ($c !~ /^([^ ]+) (write|delete|slog|renew_key)(?: |$)/) {
       die "$file: Parse Error.";
     }
     my $date = $1;
@@ -764,6 +766,13 @@ EOT
 }
 
 sub print_page {
+  my $options = "<option value=\"current\" selected=\"selected\">current</option>\n";
+  foreach my $x (@KEY_FILES) {
+    next if $x eq $KEY_FILE;
+    $x =~ s/^$KEY_PREFIX//;
+    $x =~ s/\.xml$//i;
+    $options .= "<option value=\"$x\">$x</option>\n";
+  }
   my $recaptcha_script = "";
   $recaptcha_script = "<script type=\"text/javascript\" src=\"https://www.google.com/recaptcha/api.js?render=explicit\" async defer></script>"
     if $USE_RECAPTCHA;
@@ -794,6 +803,12 @@ $recaptcha_script
 <h1>log.html に偽造がないか調べます</h1>
 
 <form id="parse_html-form" action="$PROGRAM" method="post" enctype="multipart/form-data" onSubmit="return checkSubmit('parse_html')">
+<p>
+<label>Key: <select name="key">
+$options
+</select>
+</label>
+</p>
 <p>
 <label>log.html: <input type="file" name="log-html" accept="text/html" />
 </label>
@@ -841,6 +856,11 @@ sub main {
   if ($cmd eq 'parse_html') {
     if ($USE_RECAPTCHA) {
       check_recaptcha() or die "reCAPTCHA failed.";
+    }
+    my $key = decode('UTF-8', $CGI->param('key') || '');
+    $key = $KEY_PREFIX . $key . ".xml";
+    if ((grep {$key eq $_} @KEY_FILES) && -f $key) {
+      $KEY_FILE = $key;
     }
     my $fh = $CGI->upload('log-html');
     if (! defined $fh) {

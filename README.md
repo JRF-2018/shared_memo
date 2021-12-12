@@ -1,6 +1,6 @@
 # グローバル共有メモ
 
-<!-- Time-stamp: "2020-12-02T19:23:30Z" -->
+<!-- Time-stamp: "2021-12-12T10:06:20Z" -->
 
 
 ## 概要
@@ -104,7 +104,9 @@ https://github.com/JRF-2018/memo_cgi にあるものと違ってこれは、自�
 やること 1 つ目、shared_memo.css で指定している textar-min.ttf フォン
 トをクローンサイトの /fonts 以下に置く。フォントは ↓ にアーカイブがあ
 ります。@font-face で指定するフォントには同一ドメイン制約があるので、
-これが必要になります。
+これが必要になります。(更新 2021-12-12: 現在、shared_memo.css はデフォ
+ルトでは Textar Font を使わず monospace を使うようになり、この設定は必
+要ありません。)
 
 《Textar Font(temporary)》  
 https://yamacraft.github.io/textar-font/
@@ -436,6 +438,14 @@ calc_hash.cgi を作って公開し、問題にすぐに気付いて 2時間ほ�
 たのでした。失敗しました。
 
 
+## キーファイルの更新
+
+キーファイルを更新するときは renew_key.pl を実行します。このときメモは
+すべて削除されます。
+
+前のキーファイルが shared_memo_key-(日付).xml となって残り、
+check_log.cgi を使う際に指定できるようになります。必要ない場合は削除し
+てください。
 
 
 ## 更新情報
