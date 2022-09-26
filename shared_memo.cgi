@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-our $VERSION = "0.2.0"; # Time-stamp: <2021-12-12T08:12:34Z>";
+our $VERSION = "0.2.1"; # Time-stamp: <2022-09-26T01:41:58Z>";
 
 ##
 ## Author:
@@ -36,7 +36,7 @@ use Fcntl qw(:DEFAULT :flock :seek);
 use URI::Escape qw(uri_escape uri_unescape);
 use Digest::SHA1;
 use Digest::HMAC_SHA1;
-use JSON qw(decode_json);
+use JSON::PP qw(decode_json);
 use Time::Piece;
 
 our $TITLE = "グローバル共有メモ"; ## or "街角白板１号"

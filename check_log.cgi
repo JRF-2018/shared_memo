@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-our $VERSION = "0.2.0"; # Time-stamp: <2021-12-12T09:53:03Z>";
+our $VERSION = "0.2.1"; # Time-stamp: <2022-09-26T01:42:06Z>";
 
 ##
 ## Author:
@@ -34,7 +34,7 @@ use Encode qw(encode decode);
 use Fcntl qw(:DEFAULT :flock :seek);
 use Digest::SHA1;
 use Digest::HMAC_SHA1;
-use JSON qw(decode_json);
+use JSON::PP qw(decode_json);
 use Time::Piece;
 use CGI;
 
